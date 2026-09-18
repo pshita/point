@@ -920,15 +920,13 @@ function highlightWinner(studentId){
 }
 
 function toggleCell(studentId, catKey){
-  requireEditAccess(() => {
-    const student = state.students.find(s => s.id === studentId);
-    if (!student) return;
-    const category = CATEGORIES.find(c => c.key === catKey);
-    student.cats[catKey] = student.cats[catKey] ? 0 : category.value;
-    markActivity();
-    render();
-    saveState();
-  });
+  const student = state.students.find(s => s.id === studentId);
+  if (!student) return;
+  const category = CATEGORIES.find(c => c.key === catKey);
+  student.cats[catKey] = student.cats[catKey] ? 0 : category.value;
+  markActivity();
+  render();
+  saveState();
 }
 
 const PURCHASE_COST = 8;
@@ -987,23 +985,21 @@ function setMinusShopActive(value){
 }
 
 function resetColumn(catKey){
-  requireEditAccess(() => {
-    const category = CATEGORIES.find(c => c.key === catKey);
-    showModal('לאפס את טור "' + category.label + '"? הנקודות שנצברו יתווספו לסה"כ הכולל.', {
-      confirmText: 'אישור',
-      cancelText: 'ביטול',
-      onConfirm: async () => {
-        state.students.forEach(s => {
-          s.cumulative += (s.cats[catKey] || 0);
-          if (category.cumulativeKey){
-            s[category.cumulativeKey] = (s[category.cumulativeKey] || 0) + (s.cats[catKey] || 0);
-          }
-          s.cats[catKey] = 0;
-        });
-        render();
-        await saveState();
-      }
-    });
+  const category = CATEGORIES.find(c => c.key === catKey);
+  showModal('לאפס את טור "' + category.label + '"? הנקודות שנצברו יתווספו לסה"כ הכולל.', {
+    confirmText: 'אישור',
+    cancelText: 'ביטול',
+    onConfirm: async () => {
+      state.students.forEach(s => {
+        s.cumulative += (s.cats[catKey] || 0);
+        if (category.cumulativeKey){
+          s[category.cumulativeKey] = (s[category.cumulativeKey] || 0) + (s.cats[catKey] || 0);
+        }
+        s.cats[catKey] = 0;
+      });
+      render();
+      await saveState();
+    }
   });
 }
 
@@ -1019,14 +1015,12 @@ function adjustMinus(studentId, delta){
 }
 
 function showMinusPicker(studentId){
-  requireEditAccess(() => {
-    const student = state.students.find(s => s.id === studentId);
-    if (student && (student.minusTotal || 0) === 0){
-      adjustMinus(studentId, -1);
-    } else {
-      showMinusPickerModal(studentId);
-    }
-  });
+  const student = state.students.find(s => s.id === studentId);
+  if (student && (student.minusTotal || 0) === 0){
+    adjustMinus(studentId, -1);
+  } else {
+    showMinusPickerModal(studentId);
+  }
 }
 
 function showMinusPickerModal(studentId){
@@ -1078,25 +1072,23 @@ function showMinusPickerModal(studentId){
 }
 
 function makePurchase(studentId){
-  requireEditAccess(() => {
-    const student = state.students.find(s => s.id === studentId);
-    if (!student) return;
-    const total = studentTotal(student);
-    if (total < PURCHASE_COST){
-      showModal('אין מספיק נקודות לקניה (נדרשות ' + PURCHASE_COST + ' נקודות).', { showCancel: false, confirmText: 'הבנתי' });
-      return;
+  const student = state.students.find(s => s.id === studentId);
+  if (!student) return;
+  const total = studentTotal(student);
+  if (total < PURCHASE_COST){
+    showModal('אין מספיק נקודות לקניה (נדרשות ' + PURCHASE_COST + ' נקודות).', { showCancel: false, confirmText: 'הבנתי' });
+    return;
+  }
+  showModal('לאשר קניה תמורת ' + PURCHASE_COST + ' נקודות?', {
+    confirmText: 'אישור',
+    cancelText: 'ביטול',
+    onConfirm: () => {
+      student.cumulative -= PURCHASE_COST;
+      student.purchases = (student.purchases || 0) + 1;
+      markActivity();
+      render();
+      saveState();
     }
-    showModal('לאשר קניה תמורת ' + PURCHASE_COST + ' נקודות?', {
-      confirmText: 'אישור',
-      cancelText: 'ביטול',
-      onConfirm: () => {
-        student.cumulative -= PURCHASE_COST;
-        student.purchases = (student.purchases || 0) + 1;
-        markActivity();
-        render();
-        saveState();
-      }
-    });
   });
 }
 
@@ -1665,18 +1657,16 @@ function showMetivta(){
 }
 
 function toggleFrequent(studentId, key){
-  requireEditAccess(() => {
-    const student = state.students.find(s => s.id === studentId);
-    if (!student) return;
-    if (!student.frequent) student.frequent = { mikvaot: 0, rambam: 0 };
-    if (!student.frequentFrozen) student.frequentFrozen = { mikvaot: 0, rambam: 0 };
-    const turningOn = !student.frequent[key];
-    student.frequent[key] = turningOn ? 2 : 0;
-    student.frequentFrozen[key] = (student.frequentFrozen[key] || 0) + (turningOn ? 2 : -2);
-    markActivity();
-    renderFrequentFlyerView();
-    saveState();
-  });
+  const student = state.students.find(s => s.id === studentId);
+  if (!student) return;
+  if (!student.frequent) student.frequent = { mikvaot: 0, rambam: 0 };
+  if (!student.frequentFrozen) student.frequentFrozen = { mikvaot: 0, rambam: 0 };
+  const turningOn = !student.frequent[key];
+  student.frequent[key] = turningOn ? 2 : 0;
+  student.frequentFrozen[key] = (student.frequentFrozen[key] || 0) + (turningOn ? 2 : -2);
+  markActivity();
+  renderFrequentFlyerView();
+  saveState();
 }
 
 function buildFrequentBoard(students){
@@ -1775,7 +1765,6 @@ function renderFrequentFlyerView(){
 }
 
 function showMetivtaAttendancePicker(studentId){
-  requireEditAccess(() => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
@@ -1851,7 +1840,6 @@ function showMetivtaAttendancePicker(studentId){
 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
-  });
 }
 
 function adjustMetivtaBehavior(studentId, delta){
@@ -1870,7 +1858,6 @@ function adjustMetivtaBehavior(studentId, delta){
 }
 
 function showMetivtaBehaviorPicker(studentId){
-  requireEditAccess(() => {
     const student = state.students.find(s => s.id === studentId);
     if (student && (student.metivta && student.metivta.behavior || 0) === 0){
       adjustMetivtaBehavior(studentId, -1);
@@ -1920,11 +1907,9 @@ function showMetivtaBehaviorPicker(studentId){
 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
-  });
 }
 
 function showMetivtaExtraAttendancePicker(studentId){
-  requireEditAccess(() => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
@@ -2000,7 +1985,6 @@ function showMetivtaExtraAttendancePicker(studentId){
 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
-  });
 }
 
 function adjustMetivtaExtraBehavior(studentId, delta){
@@ -2019,7 +2003,6 @@ function adjustMetivtaExtraBehavior(studentId, delta){
 }
 
 function showMetivtaExtraBehaviorPicker(studentId){
-  requireEditAccess(() => {
     const student = state.metivtaExtra.find(s => s.id === studentId);
     if (student && (student.metivta && student.metivta.behavior || 0) === 0){
       adjustMetivtaExtraBehavior(studentId, -1);
@@ -2069,7 +2052,6 @@ function showMetivtaExtraBehaviorPicker(studentId){
 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
-  });
 }
 
 function buildMetivtaBoard(students, isExtra){
@@ -3321,89 +3303,6 @@ function promptEditArchiveValue(currentValue, onSave){
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     setTimeout(() => { input.focus(); input.select(); }, 50);
-  });
-}
-
-const ACCESS_CODE = '963';
-let editUnlocked = false;
-
-function showCodePrompt(onSuccess){
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-
-  const box = document.createElement('div');
-  box.className = 'modal-box';
-
-  const msg = document.createElement('div');
-  msg.className = 'modal-msg';
-  msg.textContent = 'הזן קוד לעריכה:';
-  box.appendChild(msg);
-
-  const input = document.createElement('input');
-  input.type = 'password';
-  input.className = 'lock-input';
-  input.inputMode = 'numeric';
-  input.maxLength = 10;
-  input.autocomplete = 'off';
-  box.appendChild(input);
-
-  const errorEl = document.createElement('div');
-  errorEl.className = 'lock-error';
-  box.appendChild(errorEl);
-
-  const btnRow = document.createElement('div');
-  btnRow.className = 'modal-btns';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'modal-btn modal-btn-cancel';
-  cancelBtn.textContent = 'ביטול';
-  cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
-  btnRow.appendChild(cancelBtn);
-
-  function trySubmit(){
-    if (input.value.trim() === ACCESS_CODE){
-      editUnlocked = true;
-      document.body.removeChild(overlay);
-      onSuccess();
-    } else {
-      errorEl.textContent = 'קוד שגוי, נסה שוב';
-      input.value = '';
-      input.focus();
-    }
-  }
-  input.addEventListener('input', () => {
-    if (input.value.trim() === ACCESS_CODE){
-      editUnlocked = true;
-      document.body.removeChild(overlay);
-      onSuccess();
-    }
-  });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') trySubmit(); });
-
-  box.appendChild(btnRow);
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  setTimeout(() => input.focus(), 50);
-}
-
-let editAccessTimer = null;
-
-function armEditAccessTimer(){
-  clearTimeout(editAccessTimer);
-  editAccessTimer = setTimeout(() => {
-    editUnlocked = false;
-  }, 30000);
-}
-
-function requireEditAccess(callback){
-  if (editUnlocked){
-    armEditAccessTimer();
-    callback();
-    return;
-  }
-  showCodePrompt(() => {
-    armEditAccessTimer();
-    callback();
   });
 }
 

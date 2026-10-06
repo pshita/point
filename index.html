@@ -3167,6 +3167,7 @@ async function initApp(){
     render();
     setStatus('');
     checkAutoReset();
+    setInterval(checkAutoReset, 60 * 1000);
     subscribeToRemoteStateChanges();
 
     if (document.fonts && document.fonts.ready){

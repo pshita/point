@@ -1270,17 +1270,30 @@ async function doResetGuarded(){
   renderMetivtaView();
 }
 
+const AUTO_RESET_HOUR = 18;
+
 function checkAutoReset(){
   if (!state) return;
   if (!state.lastActivityDate) return;
   const today = todayStr();
   if (state.lastActivityDate === today){
-    if (new Date().getHours() >= 18 && state.lastAutoResetDate !== today){
+    if (new Date().getHours() >= AUTO_RESET_HOUR && state.lastAutoResetDate !== today){
       doResetGuarded();
     }
   } else {
     doResetGuarded();
   }
+}
+
+function scheduleNextAutoResetCheck(){
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(AUTO_RESET_HOUR, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  setTimeout(() => {
+    checkAutoReset();
+    scheduleNextAutoResetCheck();
+  }, next.getTime() - now.getTime());
 }
 
 function isColHidden(cat){
@@ -3165,7 +3178,7 @@ async function initApp(){
     render();
     setStatus('');
     checkAutoReset();
-    setInterval(checkAutoReset, 60 * 1000);
+    scheduleNextAutoResetCheck();
     subscribeToRemoteStateChanges();
 
     if (document.fonts && document.fonts.ready){

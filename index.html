@@ -1279,9 +1279,7 @@ function checkAutoReset(){
       doResetGuarded();
     }
   } else {
-    if (state.lastAutoResetDate !== state.lastActivityDate){
-      doResetGuarded();
-    }
+    doResetGuarded();
   }
 }
 

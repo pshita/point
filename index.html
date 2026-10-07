@@ -1213,8 +1213,7 @@ function applyDailyReset(){
         bonus: 0,
         days: {},
         baselineMikvaot: s.frequentFrozen ? (s.frequentFrozen.mikvaot || 0) : 0,
-        baselineRambam: s.frequentFrozen ? (s.frequentFrozen.rambam || 0) : 0,
-        baselineMetivta: s.metivtaFrozen ? (s.metivtaFrozen.attendance || 0) + (s.metivtaFrozen.behavior || 0) : 0
+        baselineRambam: s.frequentFrozen ? (s.frequentFrozen.rambam || 0) : 0
       }))
     };
   }
@@ -1226,7 +1225,6 @@ function applyDailyReset(){
     if (!ws.days) ws.days = {};
     if (typeof ws.baselineMikvaot !== 'number') ws.baselineMikvaot = 0;
     if (typeof ws.baselineRambam !== 'number') ws.baselineRambam = 0;
-    if (typeof ws.baselineMetivta !== 'number') ws.baselineMetivta = 0;
 
     const dayMorning = Math.round((s.cats.c1 || 0) * (2 / 3));
     const dayTefila = (s.cats.c7 || 0) + (s.cats.c3 || 0);
@@ -1234,15 +1232,20 @@ function applyDailyReset(){
 
     const priorMikvaotSum = Object.values(ws.days).reduce((sum, d) => sum + (d.mikvaotVal || 0), 0);
     const priorRambamSum = Object.values(ws.days).reduce((sum, d) => sum + (d.rambamVal || 0), 0);
-    const priorMetivtaSum = Object.values(ws.days).reduce((sum, d) => sum + (d.metivtaVal || 0), 0);
 
     const currentMikvaot = s.frequentFrozen ? (s.frequentFrozen.mikvaot || 0) : 0;
     const currentRambam = s.frequentFrozen ? (s.frequentFrozen.rambam || 0) : 0;
-    const currentMetivta = s.metivtaFrozen ? (s.metivtaFrozen.attendance || 0) + (s.metivtaFrozen.behavior || 0) : 0;
 
     const dayMikvaotVal = currentMikvaot - ws.baselineMikvaot - priorMikvaotSum;
     const dayRambamVal = currentRambam - ws.baselineRambam - priorRambamSum;
-    const dayMetivtaVal = currentMetivta - ws.baselineMetivta - priorMetivtaSum;
+
+    const attendedMetivta = (s.metivta && (s.metivta.attendance || 0) > 0);
+    let dayMetivtaVal = 0;
+    if (attendedMetivta){
+      const flags = ensureMetivtaFlags(s);
+      dayMetivtaVal = 4 - (flags.late ? 2 : 0) - (flags.leftEarly ? 2 : 0) - 2 * (flags.disturbCount || 0);
+      if (dayMetivtaVal < 0) dayMetivtaVal = 0;
+    }
 
     ws.days[entryDayKey] = {
       morning: dayMorning,
@@ -1260,7 +1263,7 @@ function applyDailyReset(){
     ws.bonus = (ws.bonus || 0) + dayBonus;
     ws.mikvaotVal = currentMikvaot - ws.baselineMikvaot;
     ws.rambamVal = currentRambam - ws.baselineRambam;
-    ws.metivtaVal = currentMetivta - ws.baselineMetivta;
+    ws.metivtaVal = (ws.metivtaVal || 0) + dayMetivtaVal;
   });
   state.archive.unshift(weeklyEntry);
 

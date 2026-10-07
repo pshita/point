@@ -280,8 +280,7 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
   app.appendChild(intro);
 
   function refreshIntro(){
-    const w = weeks[weekSelect.selectedIndex];
-    intro.textContent = 'הורה יקר, מילוי המשימות חשוב מאוד, כדי שבנכם יתקדם ביראת שמים והנהגה חסידית. נודה מאוד על עדכון מצב מילוי המשימות בשבוע האחרון של ' + weekLabel(w) + '.';
+    intro.textContent = 'הורה יקר, מילוי המשימות חשוב מאוד, כדי שבנכם יתקדם ביראת שמים והנהגה חסידית. נודה מאוד על עדכון מצב מילוי המשימות בשבוע האחרון של ' + studentName(studentId) + '.';
   }
 
   const weekField = document.createElement('div');

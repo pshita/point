@@ -687,7 +687,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getFirestore, doc, getDoc, onSnapshot, runTransaction,
+  getFirestore, doc, getDoc, onSnapshot, runTransaction, collection, getDocs,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
@@ -746,6 +746,10 @@ const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 const firestoreDb = firebaseApp ? getFirestore(firebaseApp) : null;
 const stateDocRef = firestoreDb ? doc(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY) : null;
 
+function backupDocRef(id){
+  return doc(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY, 'backups', id);
+}
+
 let lastSyncedStateJson = null;
 
 async function storageGet(){
@@ -786,12 +790,29 @@ function mergeArchiveEntries(localArchive, remoteArchive){
 async function storageSet(value){
   try{
     const body = JSON.parse(value);
+    const todayBackupRef = backupDocRef(todayStr());
+    const latestBackupRef = backupDocRef('latest');
     await runTransaction(firestoreDb, async (tx) => {
       const snap = await tx.get(stateDocRef);
+      let remote = null;
       if (snap.exists()){
-        const remote = snap.data();
+        remote = snap.data();
         if (remote && Array.isArray(remote.archive)){
           body.archive = mergeArchiveEntries(body.archive, remote.archive);
+        }
+      }
+      // Before overwriting, snapshot whatever was there - a "latest" copy
+      // plus one per calendar day - so a bad write can be undone later.
+      let todayBackupExists = false;
+      if (remote){
+        const todayBackupSnap = await tx.get(todayBackupRef);
+        todayBackupExists = todayBackupSnap.exists();
+      }
+      if (remote){
+        const savedAt = new Date().toISOString();
+        tx.set(latestBackupRef, { savedAt, data: remote });
+        if (!todayBackupExists){
+          tx.set(todayBackupRef, { savedAt, data: remote });
         }
       }
       tx.set(stateDocRef, body);
@@ -803,6 +824,106 @@ async function storageSet(value){
   } catch(e){
     return null;
   }
+}
+
+async function restoreFromBackupData(data){
+  try{
+    const restored = JSON.parse(JSON.stringify(data));
+    await runTransaction(firestoreDb, async (tx) => {
+      tx.set(stateDocRef, restored);
+    });
+    state = restored;
+    lastSyncedStateJson = JSON.stringify(restored);
+    render();
+    renderFrequentFlyerView();
+    renderMetivtaView();
+    showModal('השחזור הושלם.', { showCancel: false, confirmText: 'הבנתי' });
+  } catch(e){
+    showModal('שגיאה בשחזור: ' + (e && e.message ? e.message : String(e)), { showCancel: false, confirmText: 'הבנתי' });
+  }
+}
+
+function showRestoreBackupModal(){
+  requireArchiveEditAccess(async () => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    const loadingMsg = document.createElement('div');
+    loadingMsg.className = 'modal-msg';
+    loadingMsg.textContent = 'טוען גיבויים…';
+    box.appendChild(loadingMsg);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    try{
+      const backupsCol = collection(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY, 'backups');
+      const snaps = await getDocs(backupsCol);
+      const items = [];
+      snaps.forEach(s => {
+        const d = s.data();
+        items.push({ id: s.id, savedAt: d.savedAt, data: d.data });
+      });
+      items.sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0));
+
+      box.innerHTML = '';
+      const title = document.createElement('div');
+      title.className = 'modal-msg';
+      title.textContent = 'בחר גיבוי לשחזור:';
+      box.appendChild(title);
+
+      if (items.length === 0){
+        const empty = document.createElement('div');
+        empty.className = 'modal-msg';
+        empty.textContent = 'אין גיבויים שמורים עדיין.';
+        box.appendChild(empty);
+      }
+
+      items.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'modal-btns';
+        row.style.marginTop = '6px';
+        row.style.justifyContent = 'space-between';
+        const label = document.createElement('div');
+        label.style.alignSelf = 'center';
+        const labelText = (item.id === 'latest' ? 'העדכני ביותר' : item.id) + (item.savedAt ? ' · ' + formatHebrewDateShort(new Date(item.savedAt)) : '');
+        label.textContent = labelText;
+        row.appendChild(label);
+
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'modal-btn modal-btn-confirm';
+        restoreBtn.textContent = 'שחזר';
+        restoreBtn.addEventListener('click', () => {
+          document.body.removeChild(overlay);
+          showModal('לשחזר את המצב מ"' + labelText + '"? זה יחליף את כל הנתונים הנוכחיים.', {
+            confirmText: 'שחזר',
+            cancelText: 'ביטול',
+            onConfirm: () => restoreFromBackupData(item.data)
+          });
+        });
+        row.appendChild(restoreBtn);
+        box.appendChild(row);
+      });
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'modal-btn modal-btn-cancel';
+      closeBtn.textContent = 'סגור';
+      closeBtn.style.marginTop = '10px';
+      closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+      box.appendChild(closeBtn);
+    } catch(e){
+      box.innerHTML = '';
+      const err = document.createElement('div');
+      err.className = 'modal-msg';
+      err.textContent = 'שגיאה בטעינת הגיבויים.';
+      box.appendChild(err);
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'modal-btn modal-btn-cancel';
+      closeBtn.textContent = 'סגור';
+      closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+      box.appendChild(closeBtn);
+    }
+  });
 }
 
 function subscribeToRemoteStateChanges(){
@@ -2648,6 +2769,12 @@ function renderTodayHistoryTable(container){
   exportBtn.textContent = 'הורדת אקסל';
   exportBtn.addEventListener('click', () => exportArchiveDaysCSV(days, allOptions, groupType));
   dateEl.appendChild(exportBtn);
+
+  const restoreBtn = document.createElement('button');
+  restoreBtn.className = 'export-btn';
+  restoreBtn.textContent = 'שחזור מגיבוי';
+  restoreBtn.addEventListener('click', () => showRestoreBackupModal());
+  dateEl.appendChild(restoreBtn);
 
   wrap.appendChild(dateEl);
 

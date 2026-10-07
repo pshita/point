@@ -496,6 +496,7 @@
     font-family: 'Frank Ruhl Libre', serif;
     font-weight: 800;
     font-size: clamp(9px, 2.6vw, 14px);
+    line-height: 1.2;
     color: var(--ink-soft);
     display: flex;
     align-items: center;
@@ -1981,15 +1982,19 @@ function ensureMetivtaFlags(student){
   return student.metivtaFlags;
 }
 
-function metivtaStatusLabel(f){
+function metivtaStatusParts(f){
   if (f.late || f.leftEarly || f.disturbCount > 0){
     const parts = [];
     if (f.late) parts.push('איחור');
     if (f.leftEarly) parts.push('מוקדם');
     if (f.disturbCount > 0) parts.push('הפריע' + (f.disturbCount > 1 ? ' ×' + f.disturbCount : ''));
-    return parts.join(', ');
+    return parts;
   }
-  return f.ok ? '✓' : '';
+  return f.ok ? ['✓'] : [];
+}
+
+function metivtaStatusLabel(f){
+  return metivtaStatusParts(f).join(', ');
 }
 
 function metivtaDayScore(f){
@@ -2177,7 +2182,17 @@ function buildMetivtaBoard(students, isExtra){
     statusTd.className = 'status-cell point-cell' + (hasException ? ' status-exception' : (flags.ok ? ' status-ok' : ''));
     const statusSpan = document.createElement('span');
     statusSpan.className = 'status-val';
-    statusSpan.textContent = metivtaStatusLabel(flags);
+    const statusParts = metivtaStatusParts(flags);
+    if (statusParts.length > 1){
+      statusSpan.style.flexDirection = 'column';
+      statusParts.forEach(part => {
+        const line = document.createElement('div');
+        line.textContent = part;
+        statusSpan.appendChild(line);
+      });
+    } else {
+      statusSpan.textContent = statusParts[0] || '';
+    }
     statusTd.appendChild(statusSpan);
     statusTd.addEventListener('click', (e) => {
       if (e.target.closest('.status-plus-btn')) return;

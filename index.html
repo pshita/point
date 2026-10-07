@@ -1174,15 +1174,11 @@ function applyDailyReset(){
       cats: { ...s.cats },
       purchases: s.purchases || 0,
       minusTotal: s.minusTotal || 0,
-      metivtaSum: (s.metivta ? (s.metivta.attendance || 0) + (s.metivta.behavior || 0) : 0),
-      metivtaAttendance: (s.metivta ? (s.metivta.attendance || 0) : 0),
-      metivtaBehavior: (s.metivta ? (s.metivta.behavior || 0) : 0)
+      metivtaFlags: { ...ensureMetivtaFlags(s) }
     })),
     metivtaExtraStudents: (state.metivtaExtra || []).map(s => ({
       id: s.id,
-      metivtaSum: (s.metivta ? (s.metivta.attendance || 0) + (s.metivta.behavior || 0) : 0),
-      metivtaAttendance: (s.metivta ? (s.metivta.attendance || 0) : 0),
-      metivtaBehavior: (s.metivta ? (s.metivta.behavior || 0) : 0)
+      metivtaFlags: { ...ensureMetivtaFlags(s) }
     }))
   };
   const existingDailyIdx = state.archive.findIndex(e => e.type !== 'weekly' && dayKeyOf(e.date) === entryDayKey);
@@ -1239,14 +1235,7 @@ function applyDailyReset(){
     const dayMikvaotVal = currentMikvaot - ws.baselineMikvaot - priorMikvaotSum;
     const dayRambamVal = currentRambam - ws.baselineRambam - priorRambamSum;
 
-    const metivtaFlagsForDay = ensureMetivtaFlags(s);
-    const attendedMetivta = metivtaFlagsForDay.ok || metivtaFlagsForDay.late || metivtaFlagsForDay.leftEarly || metivtaFlagsForDay.disturbCount > 0;
-    let dayMetivtaVal = 0;
-    if (attendedMetivta){
-      const flags = metivtaFlagsForDay;
-      dayMetivtaVal = 4 - (flags.late ? 2 : 0) - (flags.leftEarly ? 2 : 0) - 2 * (flags.disturbCount || 0);
-      if (dayMetivtaVal < 0) dayMetivtaVal = 0;
-    }
+    const dayMetivtaVal = metivtaDayScore(ensureMetivtaFlags(s));
 
     ws.days[entryDayKey] = {
       morning: dayMorning,
@@ -1850,6 +1839,14 @@ function metivtaStatusLabel(f){
   return f.ok ? '✓' : '';
 }
 
+function metivtaDayScore(f){
+  const attended = f.ok || f.late || f.leftEarly || f.disturbCount > 0;
+  if (!attended) return 0;
+  let score = 4 - (f.late ? 2 : 0) - (f.leftEarly ? 2 : 0) - 2 * (f.disturbCount || 0);
+  if (score < 0) score = 0;
+  return score;
+}
+
 function toggleMetivtaOk(studentId, isExtra){
   const student = findMetivtaStatusStudent(studentId, isExtra);
   if (!student) return;
@@ -2077,23 +2074,22 @@ async function exportMetivtaArchiveCSV(days){
     const headers = ['שם'];
     days.forEach(entry => {
       const d = new Date(entry.date);
-      const dl = formatHebrewDateShort(d);
-      headers.push(dl + ' · נוכחות', dl + ' · התנהגות');
+      headers.push(formatHebrewDateShort(d));
     });
     const rows = [headers];
     state.students.forEach(student => {
       const row = [studentName(student.id)];
       days.forEach(entry => {
-        const s = entry.students.find(x => x.id === student.id) || {};
-        row.push(s.metivtaAttendance || 0, s.metivtaBehavior || 0);
+        const s = entry.students.find(x => x.id === student.id);
+        row.push(s ? metivtaStatusLabel(ensureMetivtaFlags(s)) : '');
       });
       rows.push(row);
     });
     (state.metivtaExtra || []).forEach(student => {
       const row = [metivtaExtraName(student.id)];
       days.forEach(entry => {
-        const s = (entry.metivtaExtraStudents || []).find(x => x.id === student.id) || {};
-        row.push(s.metivtaAttendance || 0, s.metivtaBehavior || 0);
+        const s = (entry.metivtaExtraStudents || []).find(x => x.id === student.id);
+        row.push(s ? metivtaStatusLabel(ensureMetivtaFlags(s)) : '');
       });
       rows.push(row);
     });
@@ -2110,43 +2106,6 @@ async function exportMetivtaArchiveCSV(days){
 }
 
 let metivtaArchiveSortIndex = null;
-
-let metivtaArchiveField = 'attendance';
-
-function buildMetivtaFieldDropdown(container){
-  const list = document.createElement('div');
-  list.className = 'merged-dropdown-list merged-dropdown-list-right';
-  [['sum', '='], ['attendance', 'נוכחות'], ['behavior', 'התנהגות']].forEach(([value, label]) => {
-    const opt = document.createElement('div');
-    opt.className = 'merged-dropdown-option';
-    opt.textContent = label;
-    opt.addEventListener('click', (e) => {
-      e.stopPropagation();
-      list.classList.remove('open');
-      metivtaArchiveField = value;
-      renderMetivtaHistoryTable(container);
-    });
-    list.appendChild(opt);
-  });
-
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'merged-dropdown-toggle';
-  toggle.textContent = metivtaArchiveField === 'behavior' ? 'התנהגות' : (metivtaArchiveField === 'sum' ? '=' : 'נוכחות');
-  toggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    document.querySelectorAll('.merged-dropdown-list.open').forEach(l => {
-      if (l !== list) l.classList.remove('open');
-    });
-    list.classList.toggle('open');
-  });
-
-  const dropdown = document.createElement('div');
-  dropdown.className = 'merged-dropdown';
-  dropdown.appendChild(toggle);
-  dropdown.appendChild(list);
-  return dropdown;
-}
 
 function renderMetivtaHistoryTable(container){
   container.innerHTML = '';
@@ -2177,7 +2136,7 @@ function renderMetivtaHistoryTable(container){
   const thead = document.createElement('thead');
   const trh = document.createElement('tr');
   const nameTh = document.createElement('th');
-  nameTh.appendChild(buildMetivtaFieldDropdown(container));
+  nameTh.textContent = 'שם';
   trh.appendChild(nameTh);
   const sevenTh = document.createElement('th');
   sevenTh.textContent = '7';
@@ -2206,42 +2165,31 @@ function renderMetivtaHistoryTable(container){
 
   const tbody = document.createElement('tbody');
 
-  const isSum = metivtaArchiveField === 'sum';
-  const fieldKey = metivtaArchiveField === 'behavior' ? 'metivtaBehavior' : 'metivtaAttendance';
-
   const mainRows = state.students.map(student => ({
     name: studentName(student.id),
-    getVal: (entry) => {
+    getFlags: (entry) => {
       const s = entry.students.find(x => x.id === student.id);
-      if (!s) return 0;
-      return isSum ? ((s.metivtaAttendance || 0) + (s.metivtaBehavior || 0)) : (s[fieldKey] || 0);
-    },
-    onEdit: isSum ? null : (entry, newVal) => {
-      const s = entry.students.find(x => x.id === student.id);
-      if (s){ s[fieldKey] = newVal; saveState(); renderMetivtaHistoryTable(container); }
+      return s ? ensureMetivtaFlags(s) : null;
     }
   }));
   const extraRows = (state.metivtaExtra || []).map(student => ({
     name: metivtaExtraName(student.id),
-    getVal: (entry) => {
-      const s = (entry.metivtaExtraStudents || []).find(x => x.id === student.id);
-      if (!s) return 0;
-      return isSum ? ((s.metivtaAttendance || 0) + (s.metivtaBehavior || 0)) : (s[fieldKey] || 0);
-    },
-    onEdit: isSum ? null : (entry, newVal) => {
+    getFlags: (entry) => {
       if (!Array.isArray(entry.metivtaExtraStudents)) entry.metivtaExtraStudents = [];
       let s = entry.metivtaExtraStudents.find(x => x.id === student.id);
-      if (!s){ s = { id: student.id, metivtaSum: 0, metivtaAttendance: 0, metivtaBehavior: 0 }; entry.metivtaExtraStudents.push(s); }
-      s[fieldKey] = newVal;
-      saveState();
-      renderMetivtaHistoryTable(container);
+      if (!s){ s = { id: student.id, metivtaFlags: { ok: false, late: false, leftEarly: false, disturbCount: 0 } }; entry.metivtaExtraStudents.push(s); }
+      return ensureMetivtaFlags(s);
     }
   }));
 
   let allRows = mainRows.concat(extraRows);
   if (metivtaArchiveSortIndex !== null && days[metivtaArchiveSortIndex]){
     const sortEntry = days[metivtaArchiveSortIndex];
-    allRows = allRows.slice().sort((a, b) => b.getVal(sortEntry) - a.getVal(sortEntry));
+    allRows = allRows.slice().sort((a, b) => {
+      const fa = a.getFlags(sortEntry);
+      const fb = b.getFlags(sortEntry);
+      return metivtaDayScore(fb || {}) - metivtaDayScore(fa || {});
+    });
   }
 
   allRows.forEach(row => {
@@ -2251,20 +2199,23 @@ function renderMetivtaHistoryTable(container){
     tr.appendChild(nameTd);
 
     const last7 = days.slice(0, 7);
-    const sevenSum = last7.reduce((sum, entry) => sum + row.getVal(entry), 0);
+    const sevenSum = last7.reduce((sum, entry) => {
+      const f = row.getFlags(entry);
+      return sum + (f ? metivtaDayScore(f) : 0);
+    }, 0);
     const sevenTd = document.createElement('td');
     sevenTd.textContent = sevenSum || '';
     sevenTd.style.fontWeight = '700';
     tr.appendChild(sevenTd);
 
     days.forEach(entry => {
-      const val = row.getVal(entry);
+      const flags = row.getFlags(entry);
       const td = document.createElement('td');
-      td.textContent = val || '';
-      if (row.onEdit){
+      if (flags){
+        td.textContent = metivtaStatusLabel(flags);
         td.style.cursor = 'pointer';
         td.addEventListener('click', () => {
-          promptEditArchiveValue(val, (newVal) => row.onEdit(entry, newVal));
+          promptEditArchiveMetivtaFlags(flags, () => { saveState(); renderMetivtaHistoryTable(container); });
         });
       }
       tr.appendChild(td);
@@ -3205,6 +3156,113 @@ function promptEditArchiveValue(currentValue, onSave){
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     setTimeout(() => { input.focus(); input.select(); }, 50);
+  });
+}
+
+function promptEditArchiveMetivtaFlags(flags, onChange){
+  requireArchiveEditAccess(() => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+
+    const msg = document.createElement('div');
+    msg.className = 'modal-msg';
+    msg.textContent = 'ערוך דיווח:';
+    box.appendChild(msg);
+
+    const okBtn = document.createElement('button');
+    function refreshOkBtn(){
+      const isPlainOk = flags.ok && !flags.late && !flags.leftEarly && !(flags.disturbCount > 0);
+      okBtn.className = 'modal-btn' + (isPlainOk ? ' modal-btn-confirm' : ' modal-btn-cancel');
+      okBtn.textContent = 'וי (הגיע בזמן)';
+    }
+    refreshOkBtn();
+    okBtn.addEventListener('click', () => {
+      flags.late = false;
+      flags.leftEarly = false;
+      flags.disturbCount = 0;
+      flags.ok = true;
+      refreshOkBtn();
+      refreshToggleBtns();
+      disturbLabel.textContent = 'הפרעות: ' + flags.disturbCount;
+      onChange();
+    });
+    box.appendChild(okBtn);
+
+    const toggleRow = document.createElement('div');
+    toggleRow.className = 'modal-btns';
+    toggleRow.style.marginTop = '10px';
+    const toggleBtns = [];
+
+    function refreshToggleBtns(){
+      toggleBtns.forEach(({ btn, label, key }) => {
+        btn.className = 'modal-btn' + (flags[key] ? ' modal-btn-confirm' : ' modal-btn-cancel');
+        btn.textContent = label + (flags[key] ? ' ✓' : '');
+      });
+    }
+
+    function buildToggleBtn(label, key){
+      const btn = document.createElement('button');
+      toggleBtns.push({ btn, label, key });
+      btn.addEventListener('click', () => {
+        flags[key] = !flags[key];
+        if (flags.late || flags.leftEarly || flags.disturbCount > 0) flags.ok = false;
+        refreshToggleBtns();
+        refreshOkBtn();
+        onChange();
+      });
+      return btn;
+    }
+
+    toggleRow.appendChild(buildToggleBtn('איחור', 'late'));
+    toggleRow.appendChild(buildToggleBtn('יצא מוקדם', 'leftEarly'));
+    refreshToggleBtns();
+    box.appendChild(toggleRow);
+
+    const disturbLabel = document.createElement('div');
+    disturbLabel.className = 'modal-msg';
+    disturbLabel.style.marginTop = '10px';
+    disturbLabel.textContent = 'הפרעות: ' + flags.disturbCount;
+    box.appendChild(disturbLabel);
+
+    const disturbRow = document.createElement('div');
+    disturbRow.className = 'modal-btns';
+
+    const minusBtn = document.createElement('button');
+    minusBtn.className = 'modal-btn modal-btn-cancel';
+    minusBtn.textContent = '−';
+    minusBtn.addEventListener('click', () => {
+      if (flags.disturbCount > 0) flags.disturbCount--;
+      disturbLabel.textContent = 'הפרעות: ' + flags.disturbCount;
+      refreshOkBtn();
+      onChange();
+    });
+    disturbRow.appendChild(minusBtn);
+
+    const plusBtn = document.createElement('button');
+    plusBtn.className = 'modal-btn modal-btn-confirm';
+    plusBtn.textContent = '+';
+    plusBtn.addEventListener('click', () => {
+      flags.disturbCount = (flags.disturbCount || 0) + 1;
+      flags.ok = false;
+      disturbLabel.textContent = 'הפרעות: ' + flags.disturbCount;
+      refreshOkBtn();
+      onChange();
+    });
+    disturbRow.appendChild(plusBtn);
+    box.appendChild(disturbRow);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-btn modal-btn-cancel';
+    closeBtn.textContent = 'סגור';
+    closeBtn.style.marginTop = '10px';
+    closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+    box.appendChild(closeBtn);
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
   });
 }
 

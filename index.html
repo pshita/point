@@ -1363,8 +1363,15 @@ function applyDailyReset(){
         bonus: 0,
         days: {},
         baselineMikvaot: s.frequentFrozen ? (s.frequentFrozen.mikvaot || 0) : 0,
-        baselineRambam: s.frequentFrozen ? (s.frequentFrozen.rambam || 0) : 0
-      }))
+        baselineRambam: s.frequentFrozen ? (s.frequentFrozen.rambam || 0) : 0,
+        chitas: 0,
+        shema: 0,
+        netilatYadaim: 0,
+        minchaMaariv: 0,
+        mikveh: false,
+        dvarTorah: false
+      })),
+      weekParsha: null
     };
   }
 
@@ -2420,7 +2427,7 @@ function renderMetivtaHistoryTable(container){
 
 async function exportWeeklyCSV(entry, weekStartD, weekEndD){
   try {
-    const headers = ['שם', 'חסידות', 'תפילה', 'מקוואות', 'בונוס', 'רמב"ם', 'מתיבתא'];
+    const headers = ['שם', 'חסידות', 'תפילה', 'מקוואות', 'בונוס', 'רמב"ם', 'מתיבתא', ...WEEKLY_PARENT_FIELD_DEFS.map(f => f.label)];
     const rows = [headers];
     const sumField = (s, field) => Object.values(s.days || {}).reduce((sum, d) => sum + (d[field] || 0), 0);
     entry.students.forEach(s => {
@@ -2431,7 +2438,8 @@ async function exportWeeklyCSV(entry, weekStartD, weekEndD){
         sumField(s, 'mikvaotVal'),
         sumField(s, 'bonus'),
         sumField(s, 'rambamVal'),
-        sumField(s, 'metivtaVal')
+        sumField(s, 'metivtaVal'),
+        ...WEEKLY_PARENT_FIELD_DEFS.map(f => f.kind === 'weekly-bool' ? (s[f.field] ? 'כן' : 'לא') : (s[f.field] || 0))
       ]);
     });
     const csv = rows.map(row => row.map(cell => {
@@ -2528,6 +2536,15 @@ function buildWeeklyViewDropdown(entry, weekStartD, container){
   return dropdown;
 }
 
+const WEEKLY_PARENT_FIELD_DEFS = [
+  { field: 'chitas', label: 'חת"ת', kind: 'weekly-number' },
+  { field: 'shema', label: 'ק"ש שעל המיטה', kind: 'weekly-number' },
+  { field: 'netilatYadaim', label: 'נטילה בבוקר', kind: 'weekly-number' },
+  { field: 'minchaMaariv', label: 'מנחה/ערבית', kind: 'weekly-number' },
+  { field: 'mikveh', label: 'מקווה ע"ש', kind: 'weekly-bool' },
+  { field: 'dvarTorah', label: 'ד"ת בסעודה', kind: 'weekly-bool' }
+];
+
 function renderWeeklyEntryInto(entry, container){
   const entryWrap = document.createElement('div');
   entryWrap.className = 'archive-entry';
@@ -2539,6 +2556,15 @@ function renderWeeklyEntryInto(entry, container){
   weekEndD.setDate(weekEndD.getDate() + 6);
 
   dateEl.appendChild(buildWeeklyViewDropdown(entry, weekStartD, container));
+
+  if (entry.weekParsha){
+    const parshaSpan = document.createElement('span');
+    parshaSpan.style.marginRight = '8px';
+    parshaSpan.style.color = 'var(--ink-soft)';
+    parshaSpan.style.fontSize = '0.85em';
+    parshaSpan.textContent = entry.weekParsha;
+    dateEl.appendChild(parshaSpan);
+  }
 
   const exportBtn = document.createElement('button');
   exportBtn.className = 'export-btn';
@@ -2555,12 +2581,13 @@ function renderWeeklyEntryInto(entry, container){
   const trh = document.createElement('tr');
   trh.appendChild(document.createElement('th')).textContent = 'שם';
   const fieldDefs = [
-    { field: 'morning', label: 'חסידות' },
-    { field: 'tefila', label: 'תפילה' },
-    { field: 'mikvaotVal', label: 'מקוואות' },
-    { field: 'bonus', label: 'בונוס' },
-    { field: 'rambamVal', label: 'רמב"ם' },
-    { field: 'metivtaVal', label: 'מתיבתא' }
+    { field: 'morning', label: 'חסידות', kind: 'daily' },
+    { field: 'tefila', label: 'תפילה', kind: 'daily' },
+    { field: 'mikvaotVal', label: 'מקוואות', kind: 'daily' },
+    { field: 'bonus', label: 'בונוס', kind: 'daily' },
+    { field: 'rambamVal', label: 'רמב"ם', kind: 'daily' },
+    { field: 'metivtaVal', label: 'מתיבתא', kind: 'daily' },
+    ...WEEKLY_PARENT_FIELD_DEFS
   ];
   const currentSortField = weeklyArchiveSortField[entry.weekKey] || null;
   const viewMode = weeklyArchiveViewMode[entry.weekKey] || 'total';
@@ -2587,36 +2614,61 @@ function renderWeeklyEntryInto(entry, container){
     return true;
   });
 
-  const getFieldVal = (s, field) => {
+  const getFieldVal = (s, field, kind) => {
+    if (kind === 'weekly-number') return s[field] || 0;
+    if (kind === 'weekly-bool') return s[field] ? 1 : 0;
     if (!isDayView){
       return Object.values(s.days || {}).reduce((sum, d) => sum + (d[field] || 0), 0);
     }
     const dayData = (s.days || {})[viewMode];
     return dayData ? (dayData[field] || 0) : 0;
   };
+  const kindOf = (field) => (fieldDefs.find(f => f.field === field) || {}).kind;
 
   if (currentSortField){
-    uniqueStudents = uniqueStudents.slice().sort((a, b) => getFieldVal(b, currentSortField) - getFieldVal(a, currentSortField));
+    uniqueStudents = uniqueStudents.slice().sort((a, b) => getFieldVal(b, currentSortField, kindOf(currentSortField)) - getFieldVal(a, currentSortField, kindOf(currentSortField)));
   }
   uniqueStudents.forEach(s => {
     const tr = document.createElement('tr');
     tr.appendChild(document.createElement('td')).textContent = studentName(s.id);
 
-    fieldDefs.forEach(({ field }) => {
+    fieldDefs.forEach(({ field, kind }) => {
       const td = document.createElement('td');
-      const val = getFieldVal(s, field);
-      td.textContent = val || '';
-      if (isDayView){
+      const val = getFieldVal(s, field, kind);
+      if (kind === 'weekly-bool'){
+        td.textContent = s[field] ? '✓' : '';
         td.style.cursor = 'pointer';
         td.addEventListener('click', () => {
-          promptEditArchiveValue(val, (newVal) => {
-            if (!s.days) s.days = {};
-            if (!s.days[viewMode]) s.days[viewMode] = {};
-            s.days[viewMode][field] = newVal;
+          requireArchiveEditAccess(() => {
+            s[field] = !s[field];
             saveState();
             renderFrequentFlyerView();
           });
         });
+      } else if (kind === 'weekly-number'){
+        td.textContent = val || '';
+        td.style.cursor = 'pointer';
+        td.addEventListener('click', () => {
+          promptEditArchiveValue(val, (newVal) => {
+            s[field] = newVal;
+            saveState();
+            renderFrequentFlyerView();
+          });
+        });
+      } else {
+        td.textContent = val || '';
+        if (isDayView){
+          td.style.cursor = 'pointer';
+          td.addEventListener('click', () => {
+            promptEditArchiveValue(val, (newVal) => {
+              if (!s.days) s.days = {};
+              if (!s.days[viewMode]) s.days[viewMode] = {};
+              s.days[viewMode][field] = newVal;
+              saveState();
+              renderFrequentFlyerView();
+            });
+          });
+        }
       }
       tr.appendChild(td);
     });

@@ -1847,6 +1847,29 @@ function metivtaDayScore(f){
   return score;
 }
 
+// Reads an archived day's per-student metivta record without mutating it,
+// falling back to the legacy attendance/behavior fields for days archived
+// before the flags-based report existed.
+function metivtaRecordHasFlags(s){
+  const f = s && s.metivtaFlags;
+  return !!(f && (f.ok || f.late || f.leftEarly || (f.disturbCount || 0) > 0));
+}
+
+function metivtaDayLabelLegacyAware(s){
+  if (!s) return '';
+  if (metivtaRecordHasFlags(s)) return metivtaStatusLabel(s.metivtaFlags);
+  const att = s.metivtaAttendance || 0;
+  const beh = s.metivtaBehavior || 0;
+  if (!att && !beh) return '';
+  return beh ? ('נוכחות ' + att + ', התנהגות ' + beh) : String(att);
+}
+
+function metivtaDayScoreLegacyAware(s){
+  if (!s) return 0;
+  if (metivtaRecordHasFlags(s)) return metivtaDayScore(s.metivtaFlags);
+  return (s.metivtaAttendance || 0) + (s.metivtaBehavior || 0);
+}
+
 function toggleMetivtaOk(studentId, isExtra){
   const student = findMetivtaStatusStudent(studentId, isExtra);
   if (!student) return;
@@ -2081,7 +2104,7 @@ async function exportMetivtaArchiveCSV(days){
       const row = [studentName(student.id)];
       days.forEach(entry => {
         const s = entry.students.find(x => x.id === student.id);
-        row.push(s ? metivtaStatusLabel(ensureMetivtaFlags(s)) : '');
+        row.push(metivtaDayLabelLegacyAware(s));
       });
       rows.push(row);
     });
@@ -2089,7 +2112,7 @@ async function exportMetivtaArchiveCSV(days){
       const row = [metivtaExtraName(student.id)];
       days.forEach(entry => {
         const s = (entry.metivtaExtraStudents || []).find(x => x.id === student.id);
-        row.push(s ? metivtaStatusLabel(ensureMetivtaFlags(s)) : '');
+        row.push(metivtaDayLabelLegacyAware(s));
       });
       rows.push(row);
     });
@@ -2167,18 +2190,17 @@ function renderMetivtaHistoryTable(container){
 
   const mainRows = state.students.map(student => ({
     name: studentName(student.id),
-    getFlags: (entry) => {
-      const s = entry.students.find(x => x.id === student.id);
-      return s ? ensureMetivtaFlags(s) : null;
-    }
+    getRecord: (entry) => entry.students.find(x => x.id === student.id) || null,
+    ensureRecord: (entry) => entry.students.find(x => x.id === student.id) || null
   }));
   const extraRows = (state.metivtaExtra || []).map(student => ({
     name: metivtaExtraName(student.id),
-    getFlags: (entry) => {
+    getRecord: (entry) => (entry.metivtaExtraStudents || []).find(x => x.id === student.id) || null,
+    ensureRecord: (entry) => {
       if (!Array.isArray(entry.metivtaExtraStudents)) entry.metivtaExtraStudents = [];
       let s = entry.metivtaExtraStudents.find(x => x.id === student.id);
       if (!s){ s = { id: student.id, metivtaFlags: { ok: false, late: false, leftEarly: false, disturbCount: 0 } }; entry.metivtaExtraStudents.push(s); }
-      return ensureMetivtaFlags(s);
+      return s;
     }
   }));
 
@@ -2186,9 +2208,7 @@ function renderMetivtaHistoryTable(container){
   if (metivtaArchiveSortIndex !== null && days[metivtaArchiveSortIndex]){
     const sortEntry = days[metivtaArchiveSortIndex];
     allRows = allRows.slice().sort((a, b) => {
-      const fa = a.getFlags(sortEntry);
-      const fb = b.getFlags(sortEntry);
-      return metivtaDayScore(fb || {}) - metivtaDayScore(fa || {});
+      return metivtaDayScoreLegacyAware(b.getRecord(sortEntry)) - metivtaDayScoreLegacyAware(a.getRecord(sortEntry));
     });
   }
 
@@ -2199,25 +2219,23 @@ function renderMetivtaHistoryTable(container){
     tr.appendChild(nameTd);
 
     const last7 = days.slice(0, 7);
-    const sevenSum = last7.reduce((sum, entry) => {
-      const f = row.getFlags(entry);
-      return sum + (f ? metivtaDayScore(f) : 0);
-    }, 0);
+    const sevenSum = last7.reduce((sum, entry) => sum + metivtaDayScoreLegacyAware(row.getRecord(entry)), 0);
     const sevenTd = document.createElement('td');
     sevenTd.textContent = sevenSum || '';
     sevenTd.style.fontWeight = '700';
     tr.appendChild(sevenTd);
 
     days.forEach(entry => {
-      const flags = row.getFlags(entry);
+      const rec = row.getRecord(entry);
       const td = document.createElement('td');
-      if (flags){
-        td.textContent = metivtaStatusLabel(flags);
-        td.style.cursor = 'pointer';
-        td.addEventListener('click', () => {
-          promptEditArchiveMetivtaFlags(flags, () => { saveState(); renderMetivtaHistoryTable(container); });
-        });
-      }
+      td.textContent = metivtaDayLabelLegacyAware(rec);
+      td.style.cursor = 'pointer';
+      td.addEventListener('click', () => {
+        const targetRec = rec || row.ensureRecord(entry);
+        if (!targetRec) return;
+        const flags = ensureMetivtaFlags(targetRec);
+        promptEditArchiveMetivtaFlags(flags, () => { saveState(); renderMetivtaHistoryTable(container); });
+      });
       tr.appendChild(td);
     });
 

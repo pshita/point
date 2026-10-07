@@ -687,7 +687,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getFirestore, doc, getDoc, setDoc, onSnapshot, runTransaction,
+  getFirestore, doc, getDoc, onSnapshot, runTransaction,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
@@ -762,12 +762,44 @@ async function storageGet(){
   }
 }
 
+// A plain setDoc overwrites the whole remote document. If this client's
+// in-memory state is stale (missed a sync while backgrounded, offline, etc.)
+// that silently drops archive entries another device already saved. Merging
+// the remote archive into what we're about to write - instead of blindly
+// replacing it - keeps any entries our local copy doesn't know about yet.
+function mergeArchiveEntries(localArchive, remoteArchive){
+  if (!Array.isArray(remoteArchive)) return localArchive;
+  if (!Array.isArray(localArchive)) return remoteArchive;
+  const keyOf = (e) => e.type === 'weekly' ? ('w:' + e.weekKey) : ('d:' + dayKeyOf(e.date));
+  const result = localArchive.slice();
+  const localKeys = new Set(result.map(keyOf));
+  remoteArchive.forEach(e => {
+    const k = keyOf(e);
+    if (!localKeys.has(k)){
+      result.push(e);
+      localKeys.add(k);
+    }
+  });
+  return result;
+}
+
 async function storageSet(value){
   try{
     const body = JSON.parse(value);
-    await setDoc(stateDocRef, body);
-    lastSyncedStateJson = value;
-    return { value };
+    await runTransaction(firestoreDb, async (tx) => {
+      const snap = await tx.get(stateDocRef);
+      if (snap.exists()){
+        const remote = snap.data();
+        if (remote && Array.isArray(remote.archive)){
+          body.archive = mergeArchiveEntries(body.archive, remote.archive);
+        }
+      }
+      tx.set(stateDocRef, body);
+    });
+    state.archive = body.archive;
+    const finalValue = JSON.stringify(body);
+    lastSyncedStateJson = finalValue;
+    return { value: finalValue };
   } catch(e){
     return null;
   }

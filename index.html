@@ -489,6 +489,54 @@
     transform: scale(0.9);
   }
 
+  .status-cell{
+    position: relative;
+  }
+  .status-cell .status-val{
+    font-family: 'Frank Ruhl Libre', serif;
+    font-weight: 800;
+    font-size: clamp(12px, 4.2vw, 22px);
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 61px;
+    overflow: hidden;
+    padding: 0 4px;
+  }
+  .status-cell.status-ok{
+    background: var(--green-bg);
+  }
+  .status-cell.status-ok .status-val{
+    color: var(--green);
+    font-size: clamp(16px, 6.5vw, 32px);
+  }
+  .status-cell.status-exception{
+    background: var(--danger-bg);
+  }
+  .status-cell.status-exception .status-val{
+    color: var(--danger);
+  }
+  .status-plus-btn{
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.12);
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 18px;
+    text-align: center;
+    padding: 0;
+    cursor: pointer;
+  }
+  .status-plus-btn:active{
+    transform: scale(0.9);
+  }
+
   footer{
     text-align:center;
     padding: 40px 20px 40px;
@@ -769,11 +817,11 @@ function metivtaExtraName(id){
 function defaultState(){
   const students = [];
   for (let i = 1; i <= TOTAL_STUDENTS; i++){
-    students.push({ id: i, cumulative: 0, cats: { c1:0, c2:0, c3:0, c4:0, c5:0, c6:0, c7:0, c8:0 }, purchases: 0, c5Total: 0, minusTotal: 0, frequent: { mikvaot: 0, rambam: 0 }, frequentFrozen: { mikvaot: 0, rambam: 0 }, metivta: { attendance: 0, behavior: 0 }, metivtaFrozen: { attendance: 0, behavior: 0 } });
+    students.push({ id: i, cumulative: 0, cats: { c1:0, c2:0, c3:0, c4:0, c5:0, c6:0, c7:0, c8:0 }, purchases: 0, c5Total: 0, minusTotal: 0, frequent: { mikvaot: 0, rambam: 0 }, frequentFrozen: { mikvaot: 0, rambam: 0 }, metivta: { attendance: 0, behavior: 0 }, metivtaFrozen: { attendance: 0, behavior: 0 }, metivtaFlags: { ok: false, late: false, leftEarly: false, disturbCount: 0 } });
   }
   const metivtaExtra = [];
   for (let i = 1; i <= 23; i++){
-    metivtaExtra.push({ id: i, metivta: { attendance: 0, behavior: 0 }, metivtaFrozen: { attendance: 0, behavior: 0 } });
+    metivtaExtra.push({ id: i, metivta: { attendance: 0, behavior: 0 }, metivtaFrozen: { attendance: 0, behavior: 0 }, metivtaFlags: { ok: false, late: false, leftEarly: false, disturbCount: 0 } });
   }
   return { students, metivtaExtra, mergedActive: MERGE_GROUPS.map(g => g[0]), minusShopActive: 'minus', archive: [], lastActivityDate: null, lastAutoResetDate: null };
 }
@@ -1235,9 +1283,11 @@ function applyDailyReset(){
     s.minusTotal = 0;
     s.frequent = { mikvaot: 0, rambam: 0 };
     s.metivta = { attendance: 0, behavior: 0 };
+    s.metivtaFlags = { ok: false, late: false, leftEarly: false, disturbCount: 0 };
   });
   (state.metivtaExtra || []).forEach(s => {
     s.metivta = { attendance: 0, behavior: 0 };
+    s.metivtaFlags = { ok: false, late: false, leftEarly: false, disturbCount: 0 };
   });
   state.lastAutoResetDate = todayStr();
   state.lastActivityDate = null;
@@ -2065,6 +2115,130 @@ function showMetivtaExtraBehaviorPicker(studentId){
     document.body.appendChild(overlay);
 }
 
+function findMetivtaStatusStudent(studentId, isExtra){
+  const list = isExtra ? (state.metivtaExtra || []) : state.students;
+  return list.find(s => s.id === studentId);
+}
+
+function ensureMetivtaFlags(student){
+  if (!student.metivtaFlags) student.metivtaFlags = { ok: false, late: false, leftEarly: false, disturbCount: 0 };
+  return student.metivtaFlags;
+}
+
+function metivtaStatusLabel(f){
+  if (f.late || f.leftEarly || f.disturbCount > 0){
+    const parts = [];
+    if (f.late) parts.push('איחור');
+    if (f.leftEarly) parts.push('מוקדם');
+    if (f.disturbCount > 0) parts.push('הפריע' + (f.disturbCount > 1 ? ' ×' + f.disturbCount : ''));
+    return parts.join(', ');
+  }
+  return f.ok ? '✓' : '';
+}
+
+function toggleMetivtaOk(studentId, isExtra){
+  const student = findMetivtaStatusStudent(studentId, isExtra);
+  if (!student) return;
+  const f = ensureMetivtaFlags(student);
+  if (f.late || f.leftEarly || f.disturbCount > 0){
+    f.late = false;
+    f.leftEarly = false;
+    f.disturbCount = 0;
+    f.ok = true;
+  } else {
+    f.ok = !f.ok;
+  }
+  markActivity();
+  renderMetivtaView();
+  saveState();
+}
+
+function showMetivtaStatusExceptionsModal(studentId, isExtra){
+  const student = findMetivtaStatusStudent(studentId, isExtra);
+  if (!student) return;
+  const f = ensureMetivtaFlags(student);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const box = document.createElement('div');
+  box.className = 'modal-box';
+
+  const msg = document.createElement('div');
+  msg.className = 'modal-msg';
+  msg.textContent = 'סמן חריגות:';
+  box.appendChild(msg);
+
+  function applyChange(){
+    f.ok = false;
+    markActivity();
+    renderMetivtaView();
+    saveState();
+  }
+
+  const toggleRow = document.createElement('div');
+  toggleRow.className = 'modal-btns';
+
+  function buildToggleBtn(label, flagKey){
+    const btn = document.createElement('button');
+    function refreshBtn(){
+      btn.className = 'modal-btn' + (f[flagKey] ? ' modal-btn-confirm' : ' modal-btn-cancel');
+      btn.textContent = label + (f[flagKey] ? ' ✓' : '');
+    }
+    refreshBtn();
+    btn.addEventListener('click', () => {
+      f[flagKey] = !f[flagKey];
+      refreshBtn();
+      applyChange();
+    });
+    return btn;
+  }
+
+  toggleRow.appendChild(buildToggleBtn('איחור', 'late'));
+  toggleRow.appendChild(buildToggleBtn('יצא מוקדם', 'leftEarly'));
+  box.appendChild(toggleRow);
+
+  const disturbLabel = document.createElement('div');
+  disturbLabel.className = 'modal-msg';
+  disturbLabel.style.marginTop = '10px';
+  disturbLabel.textContent = 'הפרעות: ' + f.disturbCount;
+  box.appendChild(disturbLabel);
+
+  const disturbRow = document.createElement('div');
+  disturbRow.className = 'modal-btns';
+
+  const minusBtn = document.createElement('button');
+  minusBtn.className = 'modal-btn modal-btn-cancel';
+  minusBtn.textContent = '−';
+  minusBtn.addEventListener('click', () => {
+    if (f.disturbCount > 0) f.disturbCount--;
+    disturbLabel.textContent = 'הפרעות: ' + f.disturbCount;
+    applyChange();
+  });
+  disturbRow.appendChild(minusBtn);
+
+  const plusBtn = document.createElement('button');
+  plusBtn.className = 'modal-btn modal-btn-confirm';
+  plusBtn.textContent = '+';
+  plusBtn.addEventListener('click', () => {
+    f.disturbCount++;
+    disturbLabel.textContent = 'הפרעות: ' + f.disturbCount;
+    applyChange();
+  });
+  disturbRow.appendChild(plusBtn);
+  box.appendChild(disturbRow);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'modal-btn modal-btn-cancel';
+  closeBtn.textContent = 'סגור';
+  closeBtn.style.marginTop = '10px';
+  closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+  box.appendChild(closeBtn);
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
 function buildMetivtaBoard(students, isExtra){
   const wrap = document.createElement('div');
   wrap.className = 'board-wrap';
@@ -2073,7 +2247,7 @@ function buildMetivtaBoard(students, isExtra){
   table.style.width = 'max(100%, 260px)';
 
   const colgroup = document.createElement('colgroup');
-  ['50%', '25%', '25%'].forEach(w => {
+  ['40%', '20%', '20%', '20%'].forEach(w => {
     const col = document.createElement('col');
     col.style.width = w;
     colgroup.appendChild(col);
@@ -2082,7 +2256,7 @@ function buildMetivtaBoard(students, isExtra){
 
   const thead = document.createElement('thead');
   const trh = document.createElement('tr');
-  ['שם', 'נוכחות', 'התנהגות'].forEach(label => {
+  ['שם', 'נוכחות', 'התנהגות', 'דיווח'].forEach(label => {
     const th = document.createElement('th');
     const inner = document.createElement('div');
     inner.className = 'th-inner';
@@ -2130,6 +2304,29 @@ function buildMetivtaBoard(students, isExtra){
     behTd.appendChild(behSpan);
     behTd.addEventListener('click', () => (isExtra ? showMetivtaExtraBehaviorPicker(student.id) : showMetivtaBehaviorPicker(student.id)));
     tr.appendChild(behTd);
+
+    const statusTd = document.createElement('td');
+    const flags = ensureMetivtaFlags(student);
+    const hasException = flags.late || flags.leftEarly || flags.disturbCount > 0;
+    statusTd.className = 'status-cell point-cell' + (hasException ? ' status-exception' : (flags.ok ? ' status-ok' : ''));
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'status-val';
+    statusSpan.textContent = metivtaStatusLabel(flags);
+    statusTd.appendChild(statusSpan);
+    statusTd.addEventListener('click', (e) => {
+      if (e.target.closest('.status-plus-btn')) return;
+      toggleMetivtaOk(student.id, isExtra);
+    });
+    const plusBtn = document.createElement('button');
+    plusBtn.type = 'button';
+    plusBtn.className = 'status-plus-btn';
+    plusBtn.textContent = '+';
+    plusBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showMetivtaStatusExceptionsModal(student.id, isExtra);
+    });
+    statusTd.appendChild(plusBtn);
+    tr.appendChild(statusTd);
 
     tbody.appendChild(tr);
   });

@@ -1239,10 +1239,11 @@ function applyDailyReset(){
     const dayMikvaotVal = currentMikvaot - ws.baselineMikvaot - priorMikvaotSum;
     const dayRambamVal = currentRambam - ws.baselineRambam - priorRambamSum;
 
-    const attendedMetivta = (s.metivta && (s.metivta.attendance || 0) > 0);
+    const metivtaFlagsForDay = ensureMetivtaFlags(s);
+    const attendedMetivta = metivtaFlagsForDay.ok || metivtaFlagsForDay.late || metivtaFlagsForDay.leftEarly || metivtaFlagsForDay.disturbCount > 0;
     let dayMetivtaVal = 0;
     if (attendedMetivta){
-      const flags = ensureMetivtaFlags(s);
+      const flags = metivtaFlagsForDay;
       dayMetivtaVal = 4 - (flags.late ? 2 : 0) - (flags.leftEarly ? 2 : 0) - 2 * (flags.disturbCount || 0);
       if (dayMetivtaVal < 0) dayMetivtaVal = 0;
     }
@@ -1828,296 +1829,6 @@ function renderFrequentFlyerView(){
   fitAllTextCells();
 }
 
-function showMetivtaAttendancePicker(studentId){
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-
-    const box = document.createElement('div');
-    box.className = 'modal-box';
-
-    const msg = document.createElement('div');
-    msg.className = 'modal-msg';
-    msg.textContent = 'בחר כמות נקודות:';
-    box.appendChild(msg);
-
-    const btnRow = document.createElement('div');
-    btnRow.className = 'modal-btns';
-
-    [2, 4].forEach(amount => {
-      const btn = document.createElement('button');
-      btn.className = 'modal-btn modal-btn-confirm';
-      btn.textContent = String(amount);
-      btn.addEventListener('click', () => {
-        document.body.removeChild(overlay);
-        const student = state.students.find(s => s.id === studentId);
-        if (!student) return;
-        if (!student.metivta) student.metivta = { attendance: 0, behavior: 0 };
-        if (!student.metivtaFrozen) student.metivtaFrozen = { attendance: 0, behavior: 0 };
-        const oldVal = student.metivta.attendance || 0;
-        student.metivta.attendance = amount;
-        student.metivtaFrozen.attendance = (student.metivtaFrozen.attendance || 0) + (amount - oldVal);
-        markActivity();
-        renderMetivtaView();
-        saveState();
-      });
-      btnRow.appendChild(btn);
-    });
-
-    box.appendChild(btnRow);
-
-    const btnRow2 = document.createElement('div');
-    btnRow2.className = 'modal-btns';
-    btnRow2.style.marginTop = '10px';
-
-    [-2, -4].forEach(amount => {
-      const btn = document.createElement('button');
-      btn.className = 'modal-btn modal-btn-confirm';
-      btn.textContent = String(amount);
-      btn.addEventListener('click', () => {
-        const student = state.students.find(s => s.id === studentId);
-        if (!student) return;
-        if (!student.metivta) student.metivta = { attendance: 0, behavior: 0 };
-        const current = student.metivta.attendance || 0;
-        if (current + amount < 0){
-          showModal('אין מספיק נקודות בנוכחות כדי להוריד ' + Math.abs(amount) + '.', { showCancel: false, confirmText: 'הבנתי' });
-          return;
-        }
-        document.body.removeChild(overlay);
-        if (!student.metivtaFrozen) student.metivtaFrozen = { attendance: 0, behavior: 0 };
-        student.metivta.attendance = current + amount;
-        student.metivtaFrozen.attendance = (student.metivtaFrozen.attendance || 0) + amount;
-        markActivity();
-        renderMetivtaView();
-        saveState();
-      });
-      btnRow2.appendChild(btn);
-    });
-
-    box.appendChild(btnRow2);
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'modal-btn modal-btn-cancel';
-    cancelBtn.textContent = 'ביטול';
-    cancelBtn.style.marginTop = '10px';
-    cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
-    box.appendChild(cancelBtn);
-
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-}
-
-function adjustMetivtaBehavior(studentId, delta){
-  const student = state.students.find(s => s.id === studentId);
-  if (!student) return;
-  if (!student.metivta) student.metivta = { attendance: 0, behavior: 0 };
-  if (!student.metivtaFrozen) student.metivtaFrozen = { attendance: 0, behavior: 0 };
-  let newTotal = (student.metivta.behavior || 0) + delta;
-  if (newTotal > 0) newTotal = 0;
-  const actualDelta = newTotal - (student.metivta.behavior || 0);
-  student.metivta.behavior = newTotal;
-  student.metivtaFrozen.behavior = (student.metivtaFrozen.behavior || 0) + actualDelta;
-  markActivity();
-  renderMetivtaView();
-  saveState();
-}
-
-function showMetivtaBehaviorPicker(studentId){
-    const student = state.students.find(s => s.id === studentId);
-    if (student && (student.metivta && student.metivta.behavior || 0) === 0){
-      adjustMetivtaBehavior(studentId, -1);
-      return;
-    }
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-
-    const box = document.createElement('div');
-    box.className = 'modal-box';
-
-    const msg = document.createElement('div');
-    msg.className = 'modal-msg';
-    msg.textContent = 'בחר ערך להוספה:';
-    box.appendChild(msg);
-
-    const btnRow = document.createElement('div');
-    btnRow.className = 'modal-btns';
-
-    const minusBtn = document.createElement('button');
-    minusBtn.className = 'modal-btn modal-btn-confirm';
-    minusBtn.textContent = '−1';
-    minusBtn.addEventListener('click', () => {
-      document.body.removeChild(overlay);
-      adjustMetivtaBehavior(studentId, -1);
-    });
-    btnRow.appendChild(minusBtn);
-
-    const plusBtn = document.createElement('button');
-    plusBtn.className = 'modal-btn modal-btn-confirm';
-    plusBtn.textContent = '+1';
-    plusBtn.addEventListener('click', () => {
-      document.body.removeChild(overlay);
-      adjustMetivtaBehavior(studentId, 1);
-    });
-    btnRow.appendChild(plusBtn);
-
-    box.appendChild(btnRow);
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'modal-btn modal-btn-cancel';
-    cancelBtn.textContent = 'ביטול';
-    cancelBtn.style.marginTop = '10px';
-    cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
-    box.appendChild(cancelBtn);
-
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-}
-
-function showMetivtaExtraAttendancePicker(studentId){
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-
-    const box = document.createElement('div');
-    box.className = 'modal-box';
-
-    const msg = document.createElement('div');
-    msg.className = 'modal-msg';
-    msg.textContent = 'בחר כמות נקודות:';
-    box.appendChild(msg);
-
-    const btnRow = document.createElement('div');
-    btnRow.className = 'modal-btns';
-
-    [2, 4].forEach(amount => {
-      const btn = document.createElement('button');
-      btn.className = 'modal-btn modal-btn-confirm';
-      btn.textContent = String(amount);
-      btn.addEventListener('click', () => {
-        document.body.removeChild(overlay);
-        const student = state.metivtaExtra.find(s => s.id === studentId);
-        if (!student) return;
-        if (!student.metivta) student.metivta = { attendance: 0, behavior: 0 };
-        if (!student.metivtaFrozen) student.metivtaFrozen = { attendance: 0, behavior: 0 };
-        const oldVal = student.metivta.attendance || 0;
-        student.metivta.attendance = amount;
-        student.metivtaFrozen.attendance = (student.metivtaFrozen.attendance || 0) + (amount - oldVal);
-        markActivity();
-        renderMetivtaView();
-        saveState();
-      });
-      btnRow.appendChild(btn);
-    });
-
-    box.appendChild(btnRow);
-
-    const btnRow2 = document.createElement('div');
-    btnRow2.className = 'modal-btns';
-    btnRow2.style.marginTop = '10px';
-
-    [-2, -4].forEach(amount => {
-      const btn = document.createElement('button');
-      btn.className = 'modal-btn modal-btn-confirm';
-      btn.textContent = String(amount);
-      btn.addEventListener('click', () => {
-        const student = state.metivtaExtra.find(s => s.id === studentId);
-        if (!student) return;
-        if (!student.metivta) student.metivta = { attendance: 0, behavior: 0 };
-        const current = student.metivta.attendance || 0;
-        if (current + amount < 0){
-          showModal('אין מספיק נקודות בנוכחות כדי להוריד ' + Math.abs(amount) + '.', { showCancel: false, confirmText: 'הבנתי' });
-          return;
-        }
-        document.body.removeChild(overlay);
-        if (!student.metivtaFrozen) student.metivtaFrozen = { attendance: 0, behavior: 0 };
-        student.metivta.attendance = current + amount;
-        student.metivtaFrozen.attendance = (student.metivtaFrozen.attendance || 0) + amount;
-        markActivity();
-        renderMetivtaView();
-        saveState();
-      });
-      btnRow2.appendChild(btn);
-    });
-
-    box.appendChild(btnRow2);
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'modal-btn modal-btn-cancel';
-    cancelBtn.textContent = 'ביטול';
-    cancelBtn.style.marginTop = '10px';
-    cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
-    box.appendChild(cancelBtn);
-
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-}
-
-function adjustMetivtaExtraBehavior(studentId, delta){
-  const student = state.metivtaExtra.find(s => s.id === studentId);
-  if (!student) return;
-  if (!student.metivta) student.metivta = { attendance: 0, behavior: 0 };
-  if (!student.metivtaFrozen) student.metivtaFrozen = { attendance: 0, behavior: 0 };
-  let newTotal = (student.metivta.behavior || 0) + delta;
-  if (newTotal > 0) newTotal = 0;
-  const actualDelta = newTotal - (student.metivta.behavior || 0);
-  student.metivta.behavior = newTotal;
-  student.metivtaFrozen.behavior = (student.metivtaFrozen.behavior || 0) + actualDelta;
-  markActivity();
-  renderMetivtaView();
-  saveState();
-}
-
-function showMetivtaExtraBehaviorPicker(studentId){
-    const student = state.metivtaExtra.find(s => s.id === studentId);
-    if (student && (student.metivta && student.metivta.behavior || 0) === 0){
-      adjustMetivtaExtraBehavior(studentId, -1);
-      return;
-    }
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-
-    const box = document.createElement('div');
-    box.className = 'modal-box';
-
-    const msg = document.createElement('div');
-    msg.className = 'modal-msg';
-    msg.textContent = 'בחר ערך להוספה:';
-    box.appendChild(msg);
-
-    const btnRow = document.createElement('div');
-    btnRow.className = 'modal-btns';
-
-    const minusBtn = document.createElement('button');
-    minusBtn.className = 'modal-btn modal-btn-confirm';
-    minusBtn.textContent = '−1';
-    minusBtn.addEventListener('click', () => {
-      document.body.removeChild(overlay);
-      adjustMetivtaExtraBehavior(studentId, -1);
-    });
-    btnRow.appendChild(minusBtn);
-
-    const plusBtn = document.createElement('button');
-    plusBtn.className = 'modal-btn modal-btn-confirm';
-    plusBtn.textContent = '+1';
-    plusBtn.addEventListener('click', () => {
-      document.body.removeChild(overlay);
-      adjustMetivtaExtraBehavior(studentId, 1);
-    });
-    btnRow.appendChild(plusBtn);
-
-    box.appendChild(btnRow);
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'modal-btn modal-btn-cancel';
-    cancelBtn.textContent = 'ביטול';
-    cancelBtn.style.marginTop = '10px';
-    cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
-    box.appendChild(cancelBtn);
-
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-}
-
 function findMetivtaStatusStudent(studentId, isExtra){
   const list = isExtra ? (state.metivtaExtra || []) : state.students;
   return list.find(s => s.id === studentId);
@@ -2250,7 +1961,7 @@ function buildMetivtaBoard(students, isExtra){
   table.style.width = 'max(100%, 260px)';
 
   const colgroup = document.createElement('colgroup');
-  ['40%', '20%', '20%', '20%'].forEach(w => {
+  ['60%', '40%'].forEach(w => {
     const col = document.createElement('col');
     col.style.width = w;
     colgroup.appendChild(col);
@@ -2259,7 +1970,7 @@ function buildMetivtaBoard(students, isExtra){
 
   const thead = document.createElement('thead');
   const trh = document.createElement('tr');
-  ['שם', 'נוכחות', 'התנהגות', 'דיווח'].forEach(label => {
+  ['שם', 'דיווח'].forEach(label => {
     const th = document.createElement('th');
     const inner = document.createElement('div');
     inner.className = 'th-inner';
@@ -2278,7 +1989,6 @@ function buildMetivtaBoard(students, isExtra){
   students.forEach(student => {
     const tr = document.createElement('tr');
     tr.dataset.studentId = student.id;
-    if (!student.metivta) student.metivta = { attendance: 0, behavior: 0 };
 
     const numTd = document.createElement('td');
     numTd.className = 'num-cell';
@@ -2287,26 +1997,6 @@ function buildMetivtaBoard(students, isExtra){
     numSpan.textContent = isExtra ? metivtaExtraName(student.id) : studentName(student.id);
     numTd.appendChild(numSpan);
     tr.appendChild(numTd);
-
-    const attTd = document.createElement('td');
-    const attVal = student.metivta.attendance || 0;
-    attTd.className = 'point-cell' + (attVal !== 0 ? ' active' : '');
-    const attSpan = document.createElement('span');
-    attSpan.className = 'point-val';
-    attSpan.textContent = attVal !== 0 ? attVal : '';
-    attTd.appendChild(attSpan);
-    attTd.addEventListener('click', () => (isExtra ? showMetivtaExtraAttendancePicker(student.id) : showMetivtaAttendancePicker(student.id)));
-    tr.appendChild(attTd);
-
-    const behTd = document.createElement('td');
-    const behVal = student.metivta.behavior || 0;
-    behTd.className = 'point-cell minus-cell' + (behVal !== 0 ? ' has-minus' : '');
-    const behSpan = document.createElement('span');
-    behSpan.className = 'point-val';
-    behSpan.textContent = behVal !== 0 ? behVal : '';
-    behTd.appendChild(behSpan);
-    behTd.addEventListener('click', () => (isExtra ? showMetivtaExtraBehaviorPicker(student.id) : showMetivtaBehaviorPicker(student.id)));
-    tr.appendChild(behTd);
 
     const statusTd = document.createElement('td');
     const flags = ensureMetivtaFlags(student);

@@ -2219,9 +2219,9 @@ function renderMetivtaHistoryTable(container){
     tr.appendChild(nameTd);
 
     const last7 = days.slice(0, 7);
-    const sevenSum = last7.reduce((sum, entry) => sum + metivtaDayScoreLegacyAware(row.getRecord(entry)), 0);
+    const sevenCount = last7.filter(entry => metivtaDayLabelLegacyAware(row.getRecord(entry)) !== '').length;
     const sevenTd = document.createElement('td');
-    sevenTd.textContent = sevenSum || '';
+    sevenTd.textContent = sevenCount || '';
     sevenTd.style.fontWeight = '700';
     tr.appendChild(sevenTd);
 

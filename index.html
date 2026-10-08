@@ -608,6 +608,13 @@
     .board-wrap{ width: 100%; max-width: 480px; }
   }
 
+  @media (min-width: 900px){
+    .archive-view{ max-width: min(96vw, 1800px); }
+    .archive-date{ font-size: 17px; padding: 12px 18px; }
+    table.archive-table th{ font-size: 18px; padding: 12px 10px; }
+    table.archive-table td{ font-size: 17px; padding: 12px 10px; }
+  }
+
   @media (max-width: 200px){
     .col-hide-narrow{ display: none !important; }
     col.col-hide-narrow{ width: 0 !important; }
@@ -678,11 +685,11 @@
 <div id="appContent">
   <div class="boards" id="boards"></div>
 
-  <div class="archive-view" id="todaySummary" style="padding: 0 20px 20px; max-width: 900px; margin: 0 auto;"></div>
+  <div class="archive-view" id="todaySummary" style="padding: 0 20px 20px;"></div>
 
-  <div class="archive-view" id="frequentFlyerView" style="display:none; max-width: 1200px;"></div>
+  <div class="archive-view" id="frequentArchiveView" style="padding: 0 20px 20px;"></div>
 
-  <div class="archive-view" id="metivtaView" style="display:none; max-width: 1600px;"></div>
+  <div class="archive-view" id="metivtaView" style="display:none; padding: 0 20px 20px;"></div>
 </div>
 
 <script type="module">
@@ -727,8 +734,24 @@ const CATEGORIES = [
 
 const MERGE_GROUPS = [
   ['c1', 'c7', 'c4', 'c8'],
-  ['c5', 'c2', 'c3']
+  ['c5', 'c2', 'c3', 'mikvaot', 'rambam']
 ];
+
+// mikvaot/rambam live in the "prayer" merged dropdown (MERGE_GROUPS[1]) but are
+// not point categories: they are a checkmark (student.frequent[key]), excluded
+// from the daily/overall point sums, and only turn into points (2, via
+// student.frequentFrozen) inside the "הנוסע המתמיד" weekly archive.
+const FREQUENT_TOGGLE_LABELS = { mikvaot: 'מקוואות', rambam: 'רמב"ם' };
+
+function isFrequentToggleKey(key){
+  return key === 'mikvaot' || key === 'rambam';
+}
+
+function categoryLabel(key){
+  if (isFrequentToggleKey(key)) return FREQUENT_TOGGLE_LABELS[key];
+  const cat = CATEGORIES.find(c => c.key === key);
+  return cat ? cat.label : '';
+}
 
 const STUDENT_NAMES = [
   'צאלי', 'ישרוליק', 'נתנאל', 'מענדי ה.', 'מענדי ח.', 'אלעאי', 'יהונתן', 'איתן', 'מענדי ל.', 'שלוימי', 'מוישלה', 'לוי ס.',
@@ -827,7 +850,7 @@ function subscribeToRemoteStateChanges(){
     if (!parsed || !Array.isArray(parsed.students) || parsed.students.length !== TOTAL_STUDENTS) return;
     state = parsed;
     render();
-    if (document.getElementById('frequentFlyerView').style.display !== 'none') renderFrequentFlyerView();
+    if (document.getElementById('frequentArchiveView').style.display !== 'none') renderFrequentFlyerView();
     if (document.getElementById('metivtaView').style.display !== 'none') renderMetivtaView();
   }, (err) => {
     // realtime sync unavailable; local get/set on next load still works
@@ -1414,7 +1437,7 @@ function armExpandedGroupTimer(){
 function buildNameDropdown(){
   const list = document.createElement('div');
   list.className = 'merged-dropdown-list merged-dropdown-list-right';
-  [['כיתה', showMain], ['נוסע מתמיד', showFrequentFlyer], ['מתיבתא', showMetivta]].forEach(([label, action]) => {
+  [['כיתה', showMain], ['מתיבתא', showMetivta]].forEach(([label, action]) => {
     const opt = document.createElement('div');
     opt.className = 'merged-dropdown-option' + (label === 'שבועי' ? ' merged-dropdown-option-all' : '');
     opt.textContent = label;
@@ -1568,10 +1591,9 @@ function buildBoard(title, students){
       const list = document.createElement('div');
       list.className = 'merged-dropdown-list';
       s.group.forEach(key => {
-        const cat = CATEGORIES.find(c => c.key === key);
         const opt = document.createElement('div');
         opt.className = 'merged-dropdown-option';
-        opt.textContent = cat.label;
+        opt.textContent = categoryLabel(key);
         opt.addEventListener('click', (e) => {
           e.stopPropagation();
           list.classList.remove('open');
@@ -1596,8 +1618,7 @@ function buildBoard(title, students){
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = 'merged-dropdown-toggle';
-      const activeCat = CATEGORIES.find(c => c.key === state.mergedActive[s.groupIndex]);
-      toggle.textContent = (activeCat ? activeCat.label : '');
+      toggle.textContent = categoryLabel(state.mergedActive[s.groupIndex]);
       toggle.addEventListener('click', (e) => {
         e.stopPropagation();
         document.querySelectorAll('.merged-dropdown-list.open').forEach(l => {
@@ -1612,8 +1633,7 @@ function buildBoard(title, students){
       dropdown.appendChild(list);
       th.appendChild(dropdown);
     } else if (s.kind === 'individual'){
-      const cat = CATEGORIES.find(c => c.key === s.key);
-      th.textContent = cat.label;
+      th.textContent = categoryLabel(s.key);
     } else if (s.kind === 'minusOnly'){
       th.textContent = '-';
     } else if (s.kind === 'shopOnly'){
@@ -1685,23 +1705,43 @@ function buildBoard(title, students){
         }
       } else if (s.kind === 'merged'){
         const activeKey = state.mergedActive[s.groupIndex];
-        let sum = s.group.reduce((sum2, k) => sum2 + (student.cats[k] || 0), 0);
-        if (s.group.includes('c5')) sum += (student.c5Total || 0);
-        const activeHasPoints = (student.cats[activeKey] || 0) > 0;
-        td.className = (td.className ? td.className + ' ' : '') + 'point-cell col-hide-narrow' + (activeHasPoints ? ' active' : '');
-        const val = document.createElement('span');
-        val.className = 'point-val';
-        val.textContent = sum > 0 ? sum : '';
-        td.appendChild(val);
-        td.addEventListener('click', () => toggleCell(student.id, activeKey));
+        if (isFrequentToggleKey(activeKey)){
+          const active = !!(student.frequent && student.frequent[activeKey]);
+          td.className = (td.className ? td.className + ' ' : '') + 'point-cell col-hide-narrow' + (active ? ' active' : '');
+          const val = document.createElement('span');
+          val.className = 'point-val';
+          val.textContent = active ? '✓' : '';
+          td.appendChild(val);
+          td.addEventListener('click', () => toggleFrequent(student.id, activeKey));
+        } else {
+          let sum = s.group.reduce((sum2, k) => sum2 + (student.cats[k] || 0), 0);
+          if (s.group.includes('c5')) sum += (student.c5Total || 0);
+          const activeHasPoints = (student.cats[activeKey] || 0) > 0;
+          td.className = (td.className ? td.className + ' ' : '') + 'point-cell col-hide-narrow' + (activeHasPoints ? ' active' : '');
+          const val = document.createElement('span');
+          val.className = 'point-val';
+          val.textContent = sum > 0 ? sum : '';
+          td.appendChild(val);
+          td.addEventListener('click', () => toggleCell(student.id, activeKey));
+        }
       } else if (s.kind === 'individual'){
-        const roundActive = !!student.cats[s.key];
-        td.className = (td.className ? td.className + ' ' : '') + 'point-cell' + (roundActive ? ' active' : '');
-        const val = document.createElement('span');
-        val.className = 'point-val';
-        val.textContent = student.cats[s.key] ? student.cats[s.key] : '';
-        td.appendChild(val);
-        td.addEventListener('click', () => toggleCell(student.id, s.key));
+        if (isFrequentToggleKey(s.key)){
+          const active = !!(student.frequent && student.frequent[s.key]);
+          td.className = (td.className ? td.className + ' ' : '') + 'point-cell' + (active ? ' active' : '');
+          const val = document.createElement('span');
+          val.className = 'point-val';
+          val.textContent = active ? '✓' : '';
+          td.appendChild(val);
+          td.addEventListener('click', () => toggleFrequent(student.id, s.key));
+        } else {
+          const roundActive = !!student.cats[s.key];
+          td.className = (td.className ? td.className + ' ' : '') + 'point-cell' + (roundActive ? ' active' : '');
+          const val = document.createElement('span');
+          val.className = 'point-val';
+          val.textContent = student.cats[s.key] ? student.cats[s.key] : '';
+          td.appendChild(val);
+          td.addEventListener('click', () => toggleCell(student.id, s.key));
+        }
       } else if (s.kind === 'minusOnly'){
         const hasMinus = (student.minusTotal || 0) !== 0;
         td.className = (td.className ? td.className + ' ' : '') + 'point-cell minus-cell' + (hasMinus ? ' has-minus' : '');
@@ -1736,26 +1776,18 @@ function buildBoard(title, students){
 }
 
 function showMain(){
-  document.getElementById('frequentFlyerView').style.display = 'none';
   document.getElementById('metivtaView').style.display = 'none';
   document.getElementById('boards').style.display = 'flex';
   document.getElementById('todaySummary').style.display = 'block';
-  fitAllTextCells();
-}
-
-function showFrequentFlyer(){
-  document.getElementById('boards').style.display = 'none';
-  document.getElementById('todaySummary').style.display = 'none';
-  document.getElementById('metivtaView').style.display = 'none';
-  const el = document.getElementById('frequentFlyerView');
-  el.style.display = 'block';
+  document.getElementById('frequentArchiveView').style.display = 'block';
   renderFrequentFlyerView();
+  fitAllTextCells();
 }
 
 function showMetivta(){
   document.getElementById('boards').style.display = 'none';
   document.getElementById('todaySummary').style.display = 'none';
-  document.getElementById('frequentFlyerView').style.display = 'none';
+  document.getElementById('frequentArchiveView').style.display = 'none';
   const el = document.getElementById('metivtaView');
   el.style.display = 'block';
   renderMetivtaView();
@@ -1770,95 +1802,13 @@ function toggleFrequent(studentId, key){
   student.frequent[key] = turningOn ? 2 : 0;
   student.frequentFrozen[key] = (student.frequentFrozen[key] || 0) + (turningOn ? 2 : -2);
   markActivity();
-  renderFrequentFlyerView();
+  render();
   saveState();
 }
 
-function buildFrequentBoard(students){
-  const wrap = document.createElement('div');
-  wrap.className = 'board-wrap';
-
-  const table = document.createElement('table');
-  table.style.width = 'max(100%, 260px)';
-
-  const colgroup = document.createElement('colgroup');
-  [['col', '50%'], ['col', '25%'], ['col', '25%']].forEach(([, w]) => {
-    const col = document.createElement('col');
-    col.style.width = w;
-    colgroup.appendChild(col);
-  });
-  table.appendChild(colgroup);
-
-  const thead = document.createElement('thead');
-  const trh = document.createElement('tr');
-  ['שם', 'מקוואות', 'רמב"ם'].forEach(label => {
-    const th = document.createElement('th');
-    const inner = document.createElement('div');
-    inner.className = 'th-inner';
-    if (label === 'שם'){
-      inner.appendChild(buildNameDropdown());
-    } else {
-      inner.textContent = label;
-    }
-    th.appendChild(inner);
-    trh.appendChild(th);
-  });
-  thead.appendChild(trh);
-  table.appendChild(thead);
-
-  const tbody = document.createElement('tbody');
-  students.forEach(student => {
-    const tr = document.createElement('tr');
-    tr.dataset.studentId = student.id;
-    if (!student.frequent) student.frequent = { mikvaot: 0, rambam: 0 };
-
-    const numTd = document.createElement('td');
-    numTd.className = 'num-cell';
-    const numSpan = document.createElement('span');
-    numSpan.className = 'cell-text';
-    numSpan.textContent = studentName(student.id);
-    numTd.appendChild(numSpan);
-    tr.appendChild(numTd);
-
-    [['mikvaot'], ['rambam']].forEach(([key]) => {
-      const td = document.createElement('td');
-      const active = !!student.frequent[key];
-      td.className = 'point-cell' + (active ? ' active' : '');
-      const val = document.createElement('span');
-      val.className = 'point-val';
-      val.textContent = active ? 2 : '';
-      td.appendChild(val);
-      td.addEventListener('click', () => toggleFrequent(student.id, key));
-      tr.appendChild(td);
-    });
-
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-
-  const scrollWrap = document.createElement('div');
-  scrollWrap.className = 'table-scroll';
-  scrollWrap.appendChild(table);
-  wrap.appendChild(scrollWrap);
-  return wrap;
-}
-
 function renderFrequentFlyerView(){
-  const el = document.getElementById('frequentFlyerView');
+  const el = document.getElementById('frequentArchiveView');
   el.innerHTML = '';
-
-  const boardsWrap = document.createElement('div');
-  boardsWrap.className = 'boards';
-  boardsWrap.style.padding = '0';
-
-  const half = Math.ceil(TOTAL_STUDENTS / 2);
-  const firstHalf = state.students.slice(0, half);
-  const secondHalf = state.students.slice(half);
-
-  boardsWrap.appendChild((() => { const c = document.createElement('div'); c.className = 'board-col'; c.appendChild(buildFrequentBoard(firstHalf)); return c; })());
-  boardsWrap.appendChild((() => { const c = document.createElement('div'); c.className = 'board-col'; c.appendChild(buildFrequentBoard(secondHalf)); return c; })());
-
-  el.appendChild(boardsWrap);
 
   const weeklyEntries = getDisplayArchive().filter(e => e.type === 'weekly');
   const weeklyScrollWrap = document.createElement('div');
@@ -2712,6 +2662,7 @@ let todayArchiveSortIndex = null;
 function getTodayArchiveValue(entry, studentId, activeKey){
   const s = entry.students.find(x => x.id === studentId);
   const cats = (s && s.cats) || {};
+  if (activeKey === 'total') return CATEGORIES.reduce((sum, c) => sum + (cats[c.key] || 0), 0) + ((s && s.minusTotal) || 0);
   if (activeKey === 'shop') return -((s && s.purchases || 0) * PURCHASE_COST);
   if (activeKey === 'minus') return (s && s.minusTotal) || 0;
   return cats[activeKey] || 0;
@@ -2724,8 +2675,9 @@ function renderTodayHistoryTable(container){
   const days = getDisplayArchive().filter(e => e.type !== 'weekly' && !e.isLive);
 
   const allOptions = [
-    ...MERGE_GROUPS[1].map(k => ({ key: k, label: CATEGORIES.find(c => c.key === k).label })),
-    ...MERGE_GROUPS[0].map(k => ({ key: k, label: CATEGORIES.find(c => c.key === k).label })),
+    { key: 'total', label: 'סה"כ' },
+    ...MERGE_GROUPS[1].filter(k => !isFrequentToggleKey(k)).map(k => ({ key: k, label: categoryLabel(k) })),
+    ...MERGE_GROUPS[0].map(k => ({ key: k, label: categoryLabel(k) })),
     { key: 'minus', label: '-' },
     { key: 'shop', label: '🛒' }
   ];
@@ -2802,7 +2754,9 @@ function renderTodayHistoryTable(container){
       const activeKey = getHistoryActive('archive_shared', groupType, allOptions[0].key);
 
       let val;
-      if (activeKey === 'shop'){
+      if (activeKey === 'total'){
+        val = CATEGORIES.reduce((sum, c) => sum + (cats[c.key] || 0), 0) + ((s && s.minusTotal) || 0);
+      } else if (activeKey === 'shop'){
         val = -((s && s.purchases || 0) * PURCHASE_COST);
       } else if (activeKey === 'minus'){
         val = (s && s.minusTotal) || 0;
@@ -2811,30 +2765,32 @@ function renderTodayHistoryTable(container){
       }
       const td = document.createElement('td');
       td.textContent = val || '';
-      td.style.cursor = 'pointer';
-      td.addEventListener('click', () => {
-        if (!s) return;
-        if (activeKey === 'shop'){
-          promptEditArchiveValue(s.purchases || 0, (newVal) => {
-            s.purchases = newVal;
-            saveState();
-            render();
-          });
-        } else if (activeKey === 'minus'){
-          promptEditArchiveValue(s.minusTotal || 0, (newVal) => {
-            s.minusTotal = newVal;
-            saveState();
-            render();
-          });
-        } else {
-          promptEditArchiveValue(cats[activeKey] || 0, (newVal) => {
-            if (!s.cats) s.cats = {};
-            s.cats[activeKey] = newVal;
-            saveState();
-            render();
-          });
-        }
-      });
+      if (activeKey !== 'total'){
+        td.style.cursor = 'pointer';
+        td.addEventListener('click', () => {
+          if (!s) return;
+          if (activeKey === 'shop'){
+            promptEditArchiveValue(s.purchases || 0, (newVal) => {
+              s.purchases = newVal;
+              saveState();
+              render();
+            });
+          } else if (activeKey === 'minus'){
+            promptEditArchiveValue(s.minusTotal || 0, (newVal) => {
+              s.minusTotal = newVal;
+              saveState();
+              render();
+            });
+          } else {
+            promptEditArchiveValue(cats[activeKey] || 0, (newVal) => {
+              if (!s.cats) s.cats = {};
+              s.cats[activeKey] = newVal;
+              saveState();
+              render();
+            });
+          }
+        });
+      }
       tr.appendChild(td);
     });
 
@@ -2961,21 +2917,23 @@ let screensaverIdleTimer = null;
 let screensaverRotateTimer = null;
 let screensaverActive = false;
 let screensaverStateIndex = 0;
-let screensaverPrevView = 'main';
 
 function currentView(){
-  if (document.getElementById('frequentFlyerView').style.display !== 'none') return 'frequentFlyer';
   if (document.getElementById('metivtaView').style.display !== 'none') return 'metivta';
   return 'main';
 }
 
+// The automatic rotation only ever runs on/returns to the classroom (כיתה)
+// page - it shows the live board, today's archive and the "הנוסע המתמיד"
+// archive table together, since they all now live on that one page. While
+// someone is on the Metivta page it does nothing, so there is no automatic
+// page switching away from it.
 function enterScreensaver(){
   if (screensaverActive) return;
+  if (currentView() !== 'main') return;
   screensaverActive = true;
-  screensaverPrevView = currentView();
   clearTimeout(expandedGroupTimer);
   screensaverStateIndex = 0;
-  if (screensaverPrevView !== 'main') showMain();
   expandedGroup = SCREENSAVER_STATES[screensaverStateIndex];
   render();
   screensaverRotateTimer = setInterval(() => {
@@ -2991,9 +2949,7 @@ function exitScreensaver(){
   clearInterval(screensaverRotateTimer);
   screensaverRotateTimer = null;
   expandedGroup = null;
-  if (screensaverPrevView === 'frequentFlyer') showFrequentFlyer();
-  else if (screensaverPrevView === 'metivta') showMetivta();
-  else render();
+  render();
 }
 
 function armScreensaverIdleTimer(){
@@ -3164,6 +3120,7 @@ async function initApp(){
     dedupDailyArchiveEntries();
     removeEmptyPlaceholderDays();
     render();
+    renderFrequentFlyerView();
     setStatus('');
     checkAutoReset();
     scheduleNextAutoResetCheck();

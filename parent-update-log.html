@@ -263,7 +263,8 @@ function buildLogTable(entries){
     const whenStr = when.toLocaleDateString('he-IL') + ' ' + when.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
     const v = entry.values || {};
     const tr = document.createElement('tr');
-    [whenStr, entry.studentName || '', entry.weekLabel || ''].forEach(text => {
+    const weekText = (entry.weekLabel || '').replace(/^פרשת\s+/, '');
+    [whenStr, entry.studentName || '', weekText].forEach(text => {
       const td = document.createElement('td');
       td.textContent = text;
       tr.appendChild(td);

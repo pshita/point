@@ -2637,6 +2637,32 @@ function fitHeaderCellToWidestWord(th){
   th.style.width = Math.ceil(maxWordWidth + padding + border + 4) + 'px';
 }
 
+function fitNamesColumnWidth(th, names){
+  const cs = getComputedStyle(th);
+  const tdCs = (() => {
+    const table = th.closest('table');
+    const sampleTd = table && table.querySelector('tbody td:first-child');
+    return sampleTd ? getComputedStyle(sampleTd) : cs;
+  })();
+  const span = document.createElement('span');
+  span.style.position = 'fixed';
+  span.style.top = '-9999px';
+  span.style.whiteSpace = 'nowrap';
+  span.style.fontFamily = tdCs.fontFamily;
+  span.style.fontWeight = tdCs.fontWeight;
+  span.style.fontSize = tdCs.fontSize;
+  document.body.appendChild(span);
+  let maxWidth = 0;
+  [th.textContent, ...names].forEach(text => {
+    span.textContent = text;
+    maxWidth = Math.max(maxWidth, span.getBoundingClientRect().width);
+  });
+  span.remove();
+  const padding = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const border = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+  th.style.width = Math.ceil(maxWidth + padding + border + 4) + 'px';
+}
+
 function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
   const entryWrap = document.createElement('div');
   entryWrap.className = 'archive-entry';
@@ -2671,10 +2697,14 @@ function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
   const table = document.createElement('table');
   table.className = 'archive-table';
   table.style.tableLayout = 'fixed';
+  table.style.width = 'max-content';
 
   const thead = document.createElement('thead');
   const trh = document.createElement('tr');
-  trh.appendChild(document.createElement('th')).textContent = 'שם';
+  const nameTh = document.createElement('th');
+  nameTh.textContent = 'שם';
+  nameTh.dataset.fitNamesCol = '1';
+  trh.appendChild(nameTh);
   const fieldDefs = [
     { field: 'morning', label: 'חסידות', kind: 'daily' },
     { field: 'tefila', label: 'תפילה', kind: 'daily' },
@@ -2692,10 +2722,8 @@ function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
   fieldDefs.forEach(({ field, label }) => {
     const th = document.createElement('th');
     th.style.cursor = 'pointer';
-    if (isParentField(field)){
-      th.style.whiteSpace = 'normal';
-      th.dataset.fitLabel = label;
-    }
+    if (isParentField(field)) th.style.whiteSpace = 'normal';
+    th.dataset.fitLabel = label;
     th.textContent = label + (currentSortField === field ? ' ▼' : '');
     th.addEventListener('click', () => {
       weeklyArchiveSortField[entry.weekKey] = field;
@@ -2781,10 +2809,14 @@ function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
-  entryWrap.appendChild(table);
+  const scrollWrap = document.createElement('div');
+  scrollWrap.className = 'table-scroll';
+  scrollWrap.appendChild(table);
+  entryWrap.appendChild(scrollWrap);
   container.appendChild(entryWrap);
 
   trh.querySelectorAll('th[data-fit-label]').forEach(fitHeaderCellToWidestWord);
+  if (nameTh.isConnected) fitNamesColumnWidth(nameTh, uniqueStudents.map(s => studentName(s.id)));
 }
 
 let historyMergedActive = {};

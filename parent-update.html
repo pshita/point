@@ -14,8 +14,6 @@
     --line:#D9D2BC;
     --gold:#B8902E;
     --gold-bg:#FBF1D9;
-    --green:#2E7D4F;
-    --green-bg:#E3F3E9;
     --danger:#9C3B3B;
     --danger-bg:#F5E4E1;
     --radius:10px;
@@ -115,7 +113,6 @@
     font-size: 14px;
     min-height: 20px;
   }
-  .status-msg.ok{ color: var(--green); }
   .status-msg.err{ color: var(--danger); }
   .error-box{
     background: var(--danger-bg);
@@ -447,8 +444,8 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       } catch(e){
         // The log is a nice-to-have; never fail the submission because of it.
       }
-      statusMsg.className = 'status-msg ok';
-      statusMsg.textContent = 'התשובות נשלחו בהצלחה, תודה!';
+      location.href = 'parent-update-sent.html';
+      return;
     } catch(e){
       statusMsg.className = 'status-msg err';
       statusMsg.textContent = 'שגיאה בשליחה: ' + (e && e.message ? e.message : String(e));

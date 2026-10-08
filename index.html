@@ -229,6 +229,7 @@
     border-bottom: 2px solid var(--gold);
     border-left: 1px solid var(--line);
     text-align: center;
+    white-space: nowrap;
   }
   table.archive-table th:first-child{ border-left: none; }
   table.archive-table td{
@@ -386,16 +387,27 @@
     padding: 0;
     text-align: right;
   }
-  .parsha-option-label{
+  .parsha-option-main{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 10px 14px;
   }
-  .parsha-option-label::after{
-    content: ' ▸';
+  .parsha-option-label{
+    flex: 1;
+  }
+  .parsha-option-caret{
     font-size: 0.8em;
     color: var(--ink-soft);
+    padding: 4px 6px;
+    cursor: pointer;
   }
-  .parsha-option.open .parsha-option-label::after{
-    content: ' ▾';
+  .parsha-option-caret::before{
+    content: '▸';
+  }
+  .parsha-option.open .parsha-option-caret::before{
+    content: '▾';
   }
   .merged-dropdown-sublist{
     display: none;
@@ -1948,7 +1960,11 @@ function toggleFrequent(studentId, key){
 let selectedWeeklyKey = null;
 
 function weeklyEntryLabel(entry){
-  return entry.weekParsha || ('שבוע ' + entry.weekKey);
+  const parshaName = entry.weekParsha ? entry.weekParsha.replace(/^פרשת\s+/, '') : ('שבוע ' + entry.weekKey);
+  const weekStartD = new Date(entry.weekStart);
+  const weekEndD = new Date(weekStartD);
+  weekEndD.setDate(weekEndD.getDate() + 6);
+  return parshaName + ' · ' + formatHebrewDateShort(weekStartD) + ' – ' + formatHebrewDateShort(weekEndD);
 }
 
 function renderFrequentFlyerView(){
@@ -2499,12 +2515,34 @@ function buildWeekDaySelectDropdown(allWeeklyEntries, selectedEntry){
     const isSelectedWeek = weekEntry.weekKey === selectedEntry.weekKey;
 
     const parshaRow = document.createElement('div');
-    parshaRow.className = 'merged-dropdown-option parsha-option' + (isSelectedWeek ? ' open' : '');
+    parshaRow.className = 'parsha-option' + (isSelectedWeek ? ' open' : '');
 
-    const parshaLabel = document.createElement('div');
+    const parshaMain = document.createElement('div');
+    parshaMain.className = 'merged-dropdown-option parsha-option-main';
+
+    const parshaLabel = document.createElement('span');
     parshaLabel.className = 'parsha-option-label';
     parshaLabel.textContent = weeklyEntryLabel(weekEntry);
-    parshaRow.appendChild(parshaLabel);
+    parshaMain.appendChild(parshaLabel);
+    parshaMain.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectedWeeklyKey = weekEntry.weekKey;
+      weeklyArchiveViewMode[weekEntry.weekKey] = 'total';
+      document.querySelectorAll('.merged-dropdown-list.open').forEach(l => l.classList.remove('open'));
+      renderFrequentFlyerView();
+    });
+
+    const expandBtn = document.createElement('span');
+    expandBtn.className = 'parsha-option-caret';
+    expandBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const alreadyOpen = parshaRow.classList.contains('open');
+      list.querySelectorAll('.parsha-option.open').forEach(p => p.classList.remove('open'));
+      if (!alreadyOpen) parshaRow.classList.add('open');
+    });
+    parshaMain.appendChild(expandBtn);
+
+    parshaRow.appendChild(parshaMain);
 
     const subList = document.createElement('div');
     subList.className = 'merged-dropdown-sublist';
@@ -2531,13 +2569,6 @@ function buildWeekDaySelectDropdown(allWeeklyEntries, selectedEntry){
       addDayOption(dayKeyOf(d.toISOString()), HEBREW_WEEKDAY_NAMES[i] + ' · ' + formatHebrewDateShort(d));
     }
     parshaRow.appendChild(subList);
-
-    parshaRow.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const alreadyOpen = parshaRow.classList.contains('open');
-      list.querySelectorAll('.parsha-option.open').forEach(p => p.classList.remove('open'));
-      if (!alreadyOpen) parshaRow.classList.add('open');
-    });
     list.appendChild(parshaRow);
   });
 

@@ -126,27 +126,6 @@
     color: var(--ink-soft);
     padding: 40px 0;
   }
-  .log-section{
-    margin-top: 30px;
-    border-top: 1px solid var(--line);
-    padding-top: 14px;
-  }
-  .log-title{
-    font-weight: 600;
-    margin-bottom: 8px;
-    font-size: 14px;
-  }
-  .log-item{
-    font-size: 12px;
-    line-height: 1.6;
-    color: var(--ink-soft);
-    padding: 6px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .log-item .log-when{
-    font-weight: 600;
-    color: var(--ink);
-  }
 </style>
 </head>
 <body>
@@ -156,7 +135,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getFirestore, doc, getDoc, runTransaction, collection, addDoc, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, runTransaction, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
 // Keep this list in sync with STUDENT_NAMES in index.html.
@@ -283,7 +262,14 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
 
   const intro = document.createElement('div');
   intro.className = 'intro';
-  intro.textContent = 'הורה יקר, מילוי המשימות חשוב מאוד, כדי שבנכם יתקדם ביראת שמים והנהגה חסידית.';
+  const introP1 = document.createElement('p');
+  introP1.style.margin = '0 0 10px';
+  introP1.textContent = 'הורה יקר, מילוי המשימות חשוב מאוד, כדי שבנכם יתקדם ביראת שמים והנהגה חסידית.';
+  intro.appendChild(introP1);
+  const introP2 = document.createElement('p');
+  introP2.style.margin = '0';
+  introP2.textContent = 'נודה מאוד על עדכון מצב מילוי המשימות בשבוע האחרון.';
+  intro.appendChild(introP2);
   app.appendChild(intro);
 
   const nameField = document.createElement('div');
@@ -392,51 +378,9 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   statusMsg.className = 'status-msg';
   app.appendChild(statusMsg);
 
-  const logSection = document.createElement('div');
-  logSection.className = 'log-section';
-  const logTitle = document.createElement('div');
-  logTitle.className = 'log-title';
-  logTitle.textContent = 'תשובות שהתקבלו';
-  logSection.appendChild(logTitle);
-  const logList = document.createElement('div');
-  logSection.appendChild(logList);
-  app.appendChild(logSection);
-
+  // Every submission is also logged to a separate collection (read only by
+  // the teacher-facing parent-update-log.html, never shown here to parents).
   const logCollectionRef = collection(db, FIRESTORE_COLLECTION, STORAGE_KEY, 'parentUpdateLog');
-
-  function formatLogEntry(entry){
-    const when = new Date(entry.submittedAt);
-    const whenStr = when.toLocaleDateString('he-IL') + ' ' + when.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-    const v = entry.values || {};
-    const parts = FIELDS.map(f => {
-      const val = v[f.key];
-      if (f.kind === 'checkbox') return f.label + ': ' + (val ? 'כן' : 'לא');
-      return f.label + ': ' + val;
-    });
-    return whenStr + ' — ' + (entry.studentName || '') + ' — ' + (entry.weekLabel || '') + ' · ' + parts.join(', ');
-  }
-
-  async function renderLog(){
-    logList.textContent = 'טוען…';
-    try{
-      const q = query(logCollectionRef, orderBy('submittedAt', 'desc'), limit(50));
-      const snaps = await getDocs(q);
-      logList.innerHTML = '';
-      if (snaps.empty){
-        logList.textContent = 'אין עדיין תשובות שהתקבלו.';
-        return;
-      }
-      snaps.forEach(s => {
-        const row = document.createElement('div');
-        row.className = 'log-item';
-        row.textContent = formatLogEntry(s.data());
-        logList.appendChild(row);
-      });
-    } catch(e){
-      logList.textContent = 'שגיאה בטעינת היסטוריית התשובות.';
-    }
-  }
-  renderLog();
 
   submitBtn.addEventListener('click', async () => {
     submitBtn.disabled = true;
@@ -489,7 +433,6 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       } catch(e){
         // The log is a nice-to-have; never fail the submission because of it.
       }
-      renderLog();
       statusMsg.className = 'status-msg ok';
       statusMsg.textContent = 'התשובות נשלחו בהצלחה, תודה!';
     } catch(e){

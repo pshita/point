@@ -166,7 +166,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getFirestore, doc, getDoc, runTransaction, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getFirestore, doc, getDocs, collection, runTransaction, addDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
 // Keep this list in sync with STUDENT_NAMES in index.html.
@@ -253,7 +253,7 @@ async function main(){
 
   const firebaseApp = initializeApp(firebaseConfig);
   const db = getFirestore(firebaseApp);
-  const stateDocRef = doc(db, FIRESTORE_COLLECTION, STORAGE_KEY);
+  const weeksCollectionRef = collection(db, FIRESTORE_COLLECTION, STORAGE_KEY, 'archiveWeeks');
 
   const weeks = [];
   const launchStart = new Date(LAUNCH_WEEK_START + 'T00:00:00');
@@ -263,26 +263,28 @@ async function main(){
   }
   await fetchParshaNames(weeks);
 
-  let remoteData = null;
+  let weeklyEntriesByKey = {};
   try{
-    const snap = await getDoc(stateDocRef);
-    if (snap.exists()) remoteData = snap.data();
+    const snaps = await getDocs(weeksCollectionRef);
+    snaps.forEach(s => {
+      const data = s.data();
+      if (data && data.weekKey) weeklyEntriesByKey[data.weekKey] = data;
+    });
   } catch(e){
     showError('שגיאה בטעינת הנתונים. נסו לרענן את העמוד.');
     return;
   }
 
-  renderForm(studentId, weeks, remoteData, db, stateDocRef);
+  renderForm(studentId, weeks, weeklyEntriesByKey, db);
 }
 
-function findStudentRecord(remoteData, weekKey, studentId){
-  if (!remoteData || !Array.isArray(remoteData.archive)) return null;
-  const entry = remoteData.archive.find(e => e.type === 'weekly' && e.weekKey === weekKey);
+function findStudentRecord(weeklyEntriesByKey, weekKey, studentId){
+  const entry = weeklyEntriesByKey[weekKey];
   if (!entry || !Array.isArray(entry.students)) return null;
   return entry.students.find(s => s.id === studentId) || null;
 }
 
-function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
+function renderForm(initialStudentId, weeks, weeklyEntriesByKey, db){
   app.innerHTML = '';
 
   const defaultWeekIdx = weeks.length > 1 ? weeks.length - 2 : 0;
@@ -400,7 +402,7 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
 
   function loadValuesForWeek(){
     const w = weeks[weekSelect.selectedIndex];
-    const rec = findStudentRecord(remoteData, w.weekKey, currentStudentId());
+    const rec = findStudentRecord(weeklyEntriesByKey, w.weekKey, currentStudentId());
     FIELDS.forEach(f => {
       if (f.kind === 'slider'){
         const v = rec && typeof rec[f.key] === 'number' ? rec[f.key] : 7;
@@ -442,23 +444,18 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
     });
 
     try{
+      const weekRef = doc(db, FIRESTORE_COLLECTION, STORAGE_KEY, 'archiveWeeks', w.weekKey);
       await runTransaction(db, async (tx) => {
-        const snap = await tx.get(stateDocRef);
-        if (!snap.exists()) throw new Error('לא נמצאו נתונים באתר');
-        const body = snap.data();
-        if (!Array.isArray(body.archive)) body.archive = [];
-        let weeklyEntry = body.archive.find(e => e.type === 'weekly' && e.weekKey === w.weekKey);
-        if (!weeklyEntry){
-          weeklyEntry = {
-            type: 'weekly',
-            title: 'הנוסע המתמיד',
-            weekKey: w.weekKey,
-            weekStart: w.weekStart.toISOString(),
-            date: w.weekStart.toISOString(),
-            students: []
-          };
-          body.archive.unshift(weeklyEntry);
-        }
+        const snap = await tx.get(weekRef);
+        let weeklyEntry = snap.exists() ? snap.data() : {
+          type: 'weekly',
+          title: 'הנוסע המתמיד',
+          weekKey: w.weekKey,
+          weekStart: w.weekStart.toISOString(),
+          date: w.weekStart.toISOString(),
+          students: [],
+          weekParsha: null
+        };
         if (!Array.isArray(weeklyEntry.students)) weeklyEntry.students = [];
         let studentRec = weeklyEntry.students.find(s => s.id === submitStudentId);
         if (!studentRec){
@@ -467,7 +464,7 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
         }
         Object.assign(studentRec, values);
         if (w.parsha) weeklyEntry.weekParsha = w.parsha;
-        tx.set(stateDocRef, body);
+        tx.set(weekRef, weeklyEntry);
       });
       try{
         await addDoc(logCollectionRef, {

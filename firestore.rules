@@ -5,8 +5,9 @@ service cloud.firestore {
     // Classroom points board: one shared document, open to anyone with the
     // link. There is no Firebase Auth login for this site - the page itself
     // gates point-editing behind a PIN code in its own UI.
-    // {document=**} also covers the "backups" subcollection used for
-    // automatic point-in-time snapshots of the main document.
+    // {document=**} also covers the "meta/dailyArchive" document and the
+    // "archiveWeeks" subcollection, which hold the point-history archive
+    // separately from the live, constantly-written main document.
     match /classroom_points/{document=**} {
       allow read, write: if true;
     }

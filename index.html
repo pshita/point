@@ -710,7 +710,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getFirestore, doc, getDoc, onSnapshot, runTransaction,
+  getFirestore, doc, getDoc, getDocs, collection, setDoc, onSnapshot, runTransaction,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
@@ -793,80 +793,121 @@ const FIRESTORE_COLLECTION = 'classroom_points';
 
 const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 const firestoreDb = firebaseApp ? getFirestore(firebaseApp) : null;
-const stateDocRef = firestoreDb ? doc(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY) : null;
 
-let lastSyncedStateJson = null;
+// Data model: the archive (daily point-history + the weekly "הנוסע המתמיד"
+// entries) lives in its own documents, separate from the live, constantly-
+// written "today" document below. A live point click never touches the
+// archive at all, and every archive write re-reads the specific archive
+// document fresh before changing it - so a device with an out-of-date copy
+// of the archive can never silently overwrite someone else's newer archive
+// data with its own stale copy (which is what caused a real data-loss
+// incident: the old design kept the whole archive embedded in the one
+// live document, and any ordinary save pushed back whatever archive this
+// device last happened to load).
+const stateDocRef = firestoreDb ? doc(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY) : null;
+const dailyArchiveDocRef = firestoreDb ? doc(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY, 'meta', 'dailyArchive') : null;
+const weeklyArchiveCollectionRef = firestoreDb ? collection(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY, 'archiveWeeks') : null;
+function weekDocRef(weekKey){
+  return doc(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY, 'archiveWeeks', weekKey);
+}
+
+let lastSyncedMainJson = null;
+
+async function fetchArchiveDays(){
+  try{
+    const snap = await getDoc(dailyArchiveDocRef);
+    if (snap.exists() && Array.isArray(snap.data().days)) return snap.data().days;
+  } catch(e){}
+  return [];
+}
+
+async function fetchArchiveWeeks(){
+  try{
+    const snaps = await getDocs(weeklyArchiveCollectionRef);
+    const list = [];
+    snaps.forEach(s => list.push(s.data()));
+    return list;
+  } catch(e){}
+  return [];
+}
+
+// One-time split of a pre-existing document that still has the archive
+// embedded in it (the old format) into the new, separate archive documents.
+// Safe to run more than once (e.g. two devices racing on the very first
+// load after this change ships): both would derive the split documents from
+// the same source archive and write the same content.
+async function migrateArchiveSplitIfNeeded(mainData){
+  if (mainData.archiveSplitV1) return mainData;
+  const oldArchive = Array.isArray(mainData.archive) ? mainData.archive : [];
+  const days = oldArchive.filter(e => e.type !== 'weekly');
+  const weeks = oldArchive.filter(e => e.type === 'weekly');
+  try{
+    await setDoc(dailyArchiveDocRef, { days });
+    for (const w of weeks){
+      await setDoc(weekDocRef(w.weekKey), w);
+    }
+    const mainUpdate = JSON.parse(JSON.stringify(mainData));
+    delete mainUpdate.archive;
+    mainUpdate.archiveSplitV1 = true;
+    await setDoc(stateDocRef, mainUpdate);
+    return mainUpdate;
+  } catch(e){
+    // leave the old embedded archive in place; this will simply be retried
+    // on the next load.
+    return mainData;
+  }
+}
 
 async function storageGet(){
   try{
     const snap = await getDoc(stateDocRef);
-    if (snap.exists()){
-      const json = JSON.stringify(snap.data());
-      lastSyncedStateJson = json;
-      return { value: json };
+    if (!snap.exists()) return null;
+    let mainData = snap.data();
+    if (!mainData.archiveSplitV1){
+      mainData = await migrateArchiveSplitIfNeeded(mainData);
     }
-    return null;
+    lastSyncedMainJson = JSON.stringify(mainData);
+    const [days, weeks] = await Promise.all([fetchArchiveDays(), fetchArchiveWeeks()]);
+    mainData = JSON.parse(JSON.stringify(mainData));
+    mainData.archive = [...days, ...weeks];
+    return { value: JSON.stringify(mainData) };
   } catch(e){
     return null;
   }
-}
-
-// A plain setDoc overwrites the whole remote document. If this client's
-// in-memory state is stale (missed a sync while backgrounded, offline, etc.)
-// that silently drops archive entries another device already saved. Merging
-// the remote archive into what we're about to write - instead of blindly
-// replacing it - keeps any entries our local copy doesn't know about yet.
-function mergeArchiveEntries(localArchive, remoteArchive){
-  if (!Array.isArray(remoteArchive)) return localArchive;
-  if (!Array.isArray(localArchive)) return remoteArchive;
-  const keyOf = (e) => e.type === 'weekly' ? ('w:' + e.weekKey) : ('d:' + dayKeyOf(e.date));
-  const result = localArchive.slice();
-  const localKeys = new Set(result.map(keyOf));
-  remoteArchive.forEach(e => {
-    const k = keyOf(e);
-    if (!localKeys.has(k)){
-      result.push(e);
-      localKeys.add(k);
-    }
-  });
-  return result;
 }
 
 async function storageSet(value){
   try{
     const body = JSON.parse(value);
-    await runTransaction(firestoreDb, async (tx) => {
-      const snap = await tx.get(stateDocRef);
-      if (snap.exists()){
-        const remote = snap.data();
-        if (remote && Array.isArray(remote.archive)){
-          body.archive = mergeArchiveEntries(body.archive, remote.archive);
-        }
-      }
-      tx.set(stateDocRef, body);
-    });
-    state.archive = body.archive;
-    const finalValue = JSON.stringify(body);
-    lastSyncedStateJson = finalValue;
-    return { value: finalValue };
+    delete body.archive;
+    await setDoc(stateDocRef, body);
+    lastSyncedMainJson = JSON.stringify(body);
+    return { ok: true };
   } catch(e){
     return null;
   }
+}
+
+async function refreshArchiveAndRender(){
+  const [days, weeks] = await Promise.all([fetchArchiveDays(), fetchArchiveWeeks()]);
+  state.archive = [...days, ...weeks];
+  if (document.getElementById('frequentArchiveView').style.display !== 'none') renderFrequentFlyerView();
+  if (document.getElementById('metivtaView').style.display !== 'none') renderMetivtaView();
 }
 
 function subscribeToRemoteStateChanges(){
   onSnapshot(stateDocRef, (snap) => {
     if (!snap.exists() || snap.metadata.hasPendingWrites) return;
     const json = JSON.stringify(snap.data());
-    if (json === lastSyncedStateJson) return;
-    lastSyncedStateJson = json;
+    if (json === lastSyncedMainJson) return;
+    lastSyncedMainJson = json;
     let parsed;
     try{ parsed = JSON.parse(json); } catch(e){ return; }
     if (!parsed || !Array.isArray(parsed.students) || parsed.students.length !== TOTAL_STUDENTS) return;
+    parsed.archive = state.archive;
     state = parsed;
     render();
-    if (document.getElementById('frequentArchiveView').style.display !== 'none') renderFrequentFlyerView();
-    if (document.getElementById('metivtaView').style.display !== 'none') renderMetivtaView();
+    refreshArchiveAndRender();
   }, (err) => {
     // realtime sync unavailable; local get/set on next load still works
   });
@@ -1243,70 +1284,66 @@ function getWeekKey(date){
   return ws.getFullYear() + '-' + String(ws.getMonth() + 1).padStart(2, '0') + '-' + String(ws.getDate()).padStart(2, '0');
 }
 
-function applyDailyReset(){
-  if (!Array.isArray(state.archive)) state.archive = [];
-  const entryDate = state.lastActivityDate
-    ? new Date(state.lastActivityDate + 'T12:00:00')
+// Pure function: computes the result of archiving one day (mainData.lastActivityDate)
+// from freshly-read documents, without touching any global state. Used inside
+// doResetGuarded's transaction so the whole operation - reading the live
+// document, the daily-archive document and the one affected week document,
+// and writing all three back - happens atomically from one consistent,
+// just-read snapshot of each.
+function computeDailyResetUpdate(mainData, dailyDays, weeklyEntry){
+  const defaultMetivtaFlags = { ok: false, late: false, leftEarly: false, disturbCount: 0 };
+  const entryDate = mainData.lastActivityDate
+    ? new Date(mainData.lastActivityDate + 'T12:00:00')
     : new Date();
   const entryDayKey = dayKeyOf(entryDate.toISOString());
+
   const newDailyData = {
     date: entryDate.toISOString(),
-    students: state.students.map(s => ({
+    students: mainData.students.map(s => ({
       id: s.id,
       cats: { ...s.cats },
       purchases: s.purchases || 0,
       minusTotal: s.minusTotal || 0,
-      metivtaFlags: { ...ensureMetivtaFlags(s) }
+      metivtaFlags: { ...(s.metivtaFlags || defaultMetivtaFlags) }
     })),
-    metivtaExtraStudents: (state.metivtaExtra || []).map(s => ({
+    metivtaExtraStudents: (mainData.metivtaExtra || []).map(s => ({
       id: s.id,
-      metivtaFlags: { ...ensureMetivtaFlags(s) }
+      metivtaFlags: { ...(s.metivtaFlags || defaultMetivtaFlags) }
     }))
   };
-  const existingDailyIdx = state.archive.findIndex(e => e.type !== 'weekly' && dayKeyOf(e.date) === entryDayKey);
-  if (existingDailyIdx !== -1){
-    state.archive.splice(existingDailyIdx, 1);
-  }
-  state.archive.unshift(newDailyData);
+
+  let days = Array.isArray(dailyDays) ? dailyDays.slice() : [];
+  const existingDailyIdx = days.findIndex(e => dayKeyOf(e.date) === entryDayKey);
+  if (existingDailyIdx !== -1) days.splice(existingDailyIdx, 1);
+  days.unshift(newDailyData);
+  const MAX_DAILY = 90;
+  if (days.length > MAX_DAILY) days = days.slice(0, MAX_DAILY);
 
   const weekKey = getWeekKey(entryDate);
-  let weeklyEntry;
-  const weeklyIdx = state.archive.findIndex(e => e.type === 'weekly' && e.weekKey === weekKey);
-  if (weeklyIdx !== -1){
-    weeklyEntry = state.archive[weeklyIdx];
-    state.archive.splice(weeklyIdx, 1);
-  } else {
-    weeklyEntry = {
-      type: 'weekly',
-      title: 'הנוסע המתמיד',
-      weekKey: weekKey,
-      weekStart: getWeekStart(entryDate).toISOString(),
-      date: entryDate.toISOString(),
-      students: state.students.map(s => ({
-        id: s.id,
-        morning: 0,
-        tefila: 0,
-        mikve: 0,
-        minusDelta: 0,
-        bonus: 0,
-        days: {},
-        baselineMikvaot: s.frequentFrozen ? (s.frequentFrozen.mikvaot || 0) : 0,
-        baselineRambam: s.frequentFrozen ? (s.frequentFrozen.rambam || 0) : 0,
-        chitas: 0,
-        shema: 0,
-        netilatYadaim: 0,
-        minchaMaariv: 0,
-        mikveh: false,
-        dvarTorah: false
-      })),
-      weekParsha: null
-    };
-  }
+  const freshWeeklyStudent = (s) => ({
+    id: s.id, morning: 0, tefila: 0, mikve: 0, minusDelta: 0, bonus: 0, days: {},
+    baselineMikvaot: s.frequentFrozen ? (s.frequentFrozen.mikvaot || 0) : 0,
+    baselineRambam: s.frequentFrozen ? (s.frequentFrozen.rambam || 0) : 0,
+    chitas: 0, shema: 0, netilatYadaim: 0, minchaMaariv: 0, mikveh: false, dvarTorah: false
+  });
+  const weeklyEntryOut = weeklyEntry ? JSON.parse(JSON.stringify(weeklyEntry)) : {
+    type: 'weekly',
+    title: 'הנוסע המתמיד',
+    weekKey: weekKey,
+    weekStart: getWeekStart(entryDate).toISOString(),
+    date: entryDate.toISOString(),
+    students: mainData.students.map(freshWeeklyStudent),
+    weekParsha: null
+  };
+  weeklyEntryOut.date = entryDate.toISOString();
+  if (!Array.isArray(weeklyEntryOut.students)) weeklyEntryOut.students = [];
 
-  weeklyEntry.date = entryDate.toISOString();
-  weeklyEntry.students.forEach(ws => {
-    const s = state.students.find(x => x.id === ws.id);
-    if (!s) return;
+  mainData.students.forEach(s => {
+    let ws = weeklyEntryOut.students.find(x => x.id === s.id);
+    if (!ws){
+      ws = freshWeeklyStudent(s);
+      weeklyEntryOut.students.push(ws);
+    }
     if (!ws.days) ws.days = {};
     if (typeof ws.baselineMikvaot !== 'number') ws.baselineMikvaot = 0;
     if (typeof ws.baselineRambam !== 'number') ws.baselineRambam = 0;
@@ -1324,7 +1361,7 @@ function applyDailyReset(){
     const dayMikvaotVal = currentMikvaot - ws.baselineMikvaot - priorMikvaotSum;
     const dayRambamVal = currentRambam - ws.baselineRambam - priorRambamSum;
 
-    const dayMetivtaVal = metivtaDayScore(ensureMetivtaFlags(s));
+    const dayMetivtaVal = metivtaDayScore(s.metivtaFlags || defaultMetivtaFlags);
 
     ws.days[entryDayKey] = {
       morning: dayMorning,
@@ -1344,19 +1381,9 @@ function applyDailyReset(){
     ws.rambamVal = currentRambam - ws.baselineRambam;
     ws.metivtaVal = (ws.metivtaVal || 0) + dayMetivtaVal;
   });
-  state.archive.unshift(weeklyEntry);
 
-  const dailyEntries = state.archive.filter(e => e.type !== 'weekly');
-  const weeklyEntries = state.archive.filter(e => e.type === 'weekly');
-  const MAX_DAILY = 90;
-  const MAX_WEEKLY = 26;
-  if (dailyEntries.length > MAX_DAILY || weeklyEntries.length > MAX_WEEKLY){
-    const keptDaily = dailyEntries.slice(0, MAX_DAILY);
-    const keptWeekly = weeklyEntries.slice(0, MAX_WEEKLY);
-    state.archive = state.archive.filter(e => keptDaily.includes(e) || keptWeekly.includes(e));
-  }
-
-  state.students.forEach(s => {
+  const newMainData = JSON.parse(JSON.stringify(mainData));
+  newMainData.students.forEach(s => {
     const daily = CATEGORIES.reduce((sum, c) => sum + (s.cats[c.key] || 0), 0);
     s.cumulative += daily + (s.minusTotal || 0);
     CATEGORIES.forEach(c => { s.cats[c.key] = 0; });
@@ -1367,39 +1394,112 @@ function applyDailyReset(){
     s.metivta = { attendance: 0, behavior: 0 };
     s.metivtaFlags = { ok: false, late: false, leftEarly: false, disturbCount: 0 };
   });
-  (state.metivtaExtra || []).forEach(s => {
+  (newMainData.metivtaExtra || []).forEach(s => {
     s.metivta = { attendance: 0, behavior: 0 };
     s.metivtaFlags = { ok: false, late: false, leftEarly: false, disturbCount: 0 };
   });
-  state.lastAutoResetDate = todayStr();
-  state.lastActivityDate = null;
+  newMainData.lastAutoResetDate = todayStr();
+  newMainData.lastActivityDate = null;
+
+  return { newMainData, newDailyDays: days, newWeeklyEntry: weeklyEntryOut, weekKey };
 }
 
 async function doResetGuarded(){
   if (!state.lastActivityDate) return;
+  let outcome = null;
   try{
     await runTransaction(firestoreDb, async (tx) => {
-      const snap = await tx.get(stateDocRef);
-      if (snap.exists()){
-        const fresh = JSON.parse(JSON.stringify(snap.data()));
-        if (fresh && Array.isArray(fresh.students) && fresh.students.length === TOTAL_STUDENTS){
-          state = fresh;
-        }
-      }
-      if (!state.lastActivityDate){
+      const mainSnap = await tx.get(stateDocRef);
+      if (!mainSnap.exists()) return;
+      const mainData = mainSnap.data();
+      if (!Array.isArray(mainData.students) || mainData.students.length !== TOTAL_STUDENTS) return;
+      if (!mainData.lastActivityDate){
         // someone else already archived and reset this transition
+        outcome = { mainData, dailyDays: null };
         return;
       }
-      applyDailyReset();
-      tx.set(stateDocRef, state);
-      lastSyncedStateJson = JSON.stringify(state);
+      const entryDate = new Date(mainData.lastActivityDate + 'T12:00:00');
+      const weekKey = getWeekKey(entryDate);
+      const weekRef = weekDocRef(weekKey);
+      const dailySnap = await tx.get(dailyArchiveDocRef);
+      const weekSnap = await tx.get(weekRef);
+      const dailyDays = dailySnap.exists() && Array.isArray(dailySnap.data().days) ? dailySnap.data().days : [];
+      const weeklyEntry = weekSnap.exists() ? weekSnap.data() : null;
+
+      const computed = computeDailyResetUpdate(mainData, dailyDays, weeklyEntry);
+      tx.set(stateDocRef, computed.newMainData);
+      tx.set(dailyArchiveDocRef, { days: computed.newDailyDays });
+      tx.set(weekRef, computed.newWeeklyEntry);
+      outcome = { mainData: computed.newMainData, dailyDays: computed.newDailyDays };
     });
   } catch(e){
     // transaction failed (offline, etc.) - render whatever is in memory so the UI isn't stuck
   }
+  if (outcome){
+    state = JSON.parse(JSON.stringify(outcome.mainData));
+    const days = outcome.dailyDays !== null ? outcome.dailyDays : await fetchArchiveDays();
+    const weeks = await fetchArchiveWeeks();
+    state.archive = [...days, ...weeks];
+    lastSyncedMainJson = JSON.stringify(outcome.mainData);
+  }
   render();
   renderFrequentFlyerView();
   renderMetivtaView();
+}
+
+// Manual archive edits (from the teacher's access-code-gated archive UI)
+// re-read the specific small document fresh before changing it, instead of
+// pushing back whatever this device's in-memory copy of the whole archive
+// happens to hold - so an edit here can't silently undo someone else's
+// newer change to the same day/week.
+async function updateWeekStudentRecord(weekKey, studentId, mutatorFn){
+  try{
+    setStatus('שומר…');
+    await runTransaction(firestoreDb, async (tx) => {
+      const ref = weekDocRef(weekKey);
+      const snap = await tx.get(ref);
+      let data = snap.exists() ? snap.data() : {
+        type: 'weekly', title: 'הנוסע המתמיד', weekKey: weekKey,
+        weekStart: getWeekStart(new Date(weekKey + 'T12:00:00')).toISOString(),
+        date: new Date().toISOString(), students: [], weekParsha: null
+      };
+      if (!Array.isArray(data.students)) data.students = [];
+      let rec = data.students.find(s => s.id === studentId);
+      if (!rec){ rec = { id: studentId, days: {} }; data.students.push(rec); }
+      mutatorFn(rec);
+      tx.set(ref, data);
+    });
+    setStatus('נשמר');
+    setTimeout(() => setStatus(''), 1200);
+  } catch(e){
+    setStatus('שמירה נכשלה');
+    setTimeout(() => setStatus(''), 3000);
+  }
+}
+
+async function updateDailyArchiveRecord(dayKey, studentId, isExtra, mutatorFn){
+  try{
+    setStatus('שומר…');
+    await runTransaction(firestoreDb, async (tx) => {
+      const snap = await tx.get(dailyArchiveDocRef);
+      const data = snap.exists() ? snap.data() : { days: [] };
+      const days = Array.isArray(data.days) ? data.days : [];
+      const entry = days.find(e => dayKeyOf(e.date) === dayKey);
+      if (!entry) return;
+      if (isExtra && !Array.isArray(entry.metivtaExtraStudents)) entry.metivtaExtraStudents = [];
+      if (!isExtra && !Array.isArray(entry.students)) entry.students = [];
+      const list = isExtra ? entry.metivtaExtraStudents : entry.students;
+      let rec = list.find(x => x.id === studentId);
+      if (!rec){ rec = { id: studentId }; list.push(rec); }
+      mutatorFn(rec);
+      tx.set(dailyArchiveDocRef, { days });
+    });
+    setStatus('נשמר');
+    setTimeout(() => setStatus(''), 1200);
+  } catch(e){
+    setStatus('שמירה נכשלה');
+    setTimeout(() => setStatus(''), 3000);
+  }
 }
 
 const AUTO_RESET_HOUR = 18;
@@ -2215,11 +2315,15 @@ function renderMetivtaHistoryTable(container){
   const tbody = document.createElement('tbody');
 
   const mainRows = state.students.map(student => ({
+    id: student.id,
+    isExtra: false,
     name: metivtaStudentName(student.id),
     getRecord: (entry) => entry.students.find(x => x.id === student.id) || null,
     ensureRecord: (entry) => entry.students.find(x => x.id === student.id) || null
   }));
   const extraRows = (state.metivtaExtra || []).map(student => ({
+    id: student.id,
+    isExtra: true,
     name: metivtaExtraName(student.id),
     getRecord: (entry) => (entry.metivtaExtraStudents || []).find(x => x.id === student.id) || null,
     ensureRecord: (entry) => {
@@ -2260,7 +2364,13 @@ function renderMetivtaHistoryTable(container){
         const targetRec = rec || row.ensureRecord(entry);
         if (!targetRec) return;
         const flags = ensureMetivtaFlags(targetRec);
-        promptEditArchiveMetivtaFlags(flags, () => { saveState(); renderMetivtaHistoryTable(container); });
+        const dayKey = dayKeyOf(entry.date);
+        promptEditArchiveMetivtaFlags(flags, () => {
+          updateDailyArchiveRecord(dayKey, row.id, row.isExtra, (fresh) => {
+            fresh.metivtaFlags = { ...flags };
+          });
+          renderMetivtaHistoryTable(container);
+        });
       });
       tr.appendChild(td);
     });
@@ -2492,7 +2602,8 @@ function renderWeeklyEntryInto(entry, container){
         td.addEventListener('click', () => {
           requireArchiveEditAccess(() => {
             s[field] = !s[field];
-            saveState();
+            const newVal = s[field];
+            updateWeekStudentRecord(entry.weekKey, s.id, (rec) => { rec[field] = newVal; });
             renderFrequentFlyerView();
           });
         });
@@ -2502,7 +2613,7 @@ function renderWeeklyEntryInto(entry, container){
         td.addEventListener('click', () => {
           promptEditArchiveValue(val, (newVal) => {
             s[field] = newVal;
-            saveState();
+            updateWeekStudentRecord(entry.weekKey, s.id, (rec) => { rec[field] = newVal; });
             renderFrequentFlyerView();
           });
         });
@@ -2515,7 +2626,11 @@ function renderWeeklyEntryInto(entry, container){
               if (!s.days) s.days = {};
               if (!s.days[viewMode]) s.days[viewMode] = {};
               s.days[viewMode][field] = newVal;
-              saveState();
+              updateWeekStudentRecord(entry.weekKey, s.id, (rec) => {
+                if (!rec.days) rec.days = {};
+                if (!rec.days[viewMode]) rec.days[viewMode] = {};
+                rec.days[viewMode][field] = newVal;
+              });
               renderFrequentFlyerView();
             });
           });
@@ -2776,23 +2891,27 @@ function renderTodayHistoryTable(container){
         td.style.cursor = 'pointer';
         td.addEventListener('click', () => {
           if (!s) return;
+          const dayKey = dayKeyOf(entry.date);
           if (activeKey === 'shop'){
             promptEditArchiveValue(s.purchases || 0, (newVal) => {
               s.purchases = newVal;
-              saveState();
+              updateDailyArchiveRecord(dayKey, student.id, false, (rec) => { rec.purchases = newVal; });
               render();
             });
           } else if (activeKey === 'minus'){
             promptEditArchiveValue(s.minusTotal || 0, (newVal) => {
               s.minusTotal = newVal;
-              saveState();
+              updateDailyArchiveRecord(dayKey, student.id, false, (rec) => { rec.minusTotal = newVal; });
               render();
             });
           } else {
             promptEditArchiveValue(cats[activeKey] || 0, (newVal) => {
               if (!s.cats) s.cats = {};
               s.cats[activeKey] = newVal;
-              saveState();
+              updateDailyArchiveRecord(dayKey, student.id, false, (rec) => {
+                if (!rec.cats) rec.cats = {};
+                rec.cats[activeKey] = newVal;
+              });
               render();
             });
           }

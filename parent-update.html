@@ -47,11 +47,6 @@
   .field{
     margin: 18px 0;
   }
-  .field label{
-    display: block;
-    font-weight: 600;
-    margin-bottom: 8px;
-  }
   select{
     width: 100%;
     padding: 10px;
@@ -61,10 +56,42 @@
     font-size: 15px;
     background: #fff;
   }
-  .slider-row{
+  .top-fields-row{
+    display: flex;
+    gap: 12px;
+    margin: 18px 0;
+  }
+  .top-fields-row .field{
+    flex: 1 1 0;
+    min-width: 0;
+    margin: 0;
+  }
+  .slider-field{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .slider-text{
+    flex: 1;
+    min-width: 0;
+  }
+  .slider-label{
+    font-weight: 600;
+    margin: 0;
+  }
+  .slider-note{
+    font-weight: 400;
+    font-size: 0.8em;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+  .slider-control{
     display: flex;
     align-items: center;
     gap: 10px;
+    flex: 0 0 150px;
+    width: 150px;
   }
   input[type="range"]{
     flex: 1;
@@ -168,7 +195,7 @@ function dateKey(d){
 const FIELDS = [
   { key: 'chitas', label: 'לימוד חת"ת', kind: 'slider' },
   { key: 'shema', label: 'קריאת שמע שעל המיטה', note: 'אחרי בר מצווה, עם כובע וחליפה', kind: 'slider' },
-  { key: 'netilatYadaim', label: 'נטילת ידיים בבוקר על יד המיטה', kind: 'slider' },
+  { key: 'netilatYadaim', label: 'נטילת ידיים על יד המיטה', kind: 'slider' },
   { key: 'minchaMaariv', label: 'תפילות מנחה וערבית במניין', note: 'ושחרית בזמני חופשה', kind: 'slider' },
   { key: 'mikveh', label: 'מקווה בערב שבת', kind: 'checkbox' },
   { key: 'dvarTorah', label: 'דבר תורה בסעודת שבת', kind: 'checkbox' }
@@ -266,7 +293,7 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   const intro = document.createElement('div');
   intro.className = 'intro';
   const introP1 = document.createElement('p');
-  introP1.style.margin = '0 0 4px';
+  introP1.style.margin = '0';
   introP1.textContent = 'הורה יקר, מילוי המשימות חשוב מאוד, כדי שבנכם יתקדם ביראת שמים והנהגה חסידית.';
   intro.appendChild(introP1);
   const introP2 = document.createElement('p');
@@ -274,6 +301,9 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   introP2.textContent = 'נודה מאוד על עדכון מצב מילוי המשימות בשבוע האחרון.';
   intro.appendChild(introP2);
   app.appendChild(intro);
+
+  const topFieldsRow = document.createElement('div');
+  topFieldsRow.className = 'top-fields-row';
 
   const nameField = document.createElement('div');
   nameField.className = 'field';
@@ -286,12 +316,10 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   });
   nameSelect.value = String(initialStudentId);
   nameField.appendChild(nameSelect);
-  nameField.style.margin = '18px 0 6px';
-  app.appendChild(nameField);
+  topFieldsRow.appendChild(nameField);
 
   const weekField = document.createElement('div');
   weekField.className = 'field';
-  weekField.style.margin = '6px 0 18px';
   const weekSelect = document.createElement('select');
   weeks.forEach((w, idx) => {
     const opt = document.createElement('option');
@@ -301,7 +329,9 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   });
   weekSelect.selectedIndex = defaultWeekIdx;
   weekField.appendChild(weekSelect);
-  app.appendChild(weekField);
+  topFieldsRow.appendChild(weekField);
+
+  app.appendChild(topFieldsRow);
 
   function currentStudentId(){
     return parseInt(nameSelect.value, 10);
@@ -312,20 +342,24 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   FIELDS.forEach(f => {
     if (f.kind === 'slider'){
       const field = document.createElement('div');
-      field.className = 'field';
-      const label = document.createElement('label');
+      field.className = 'field slider-field';
+
+      const text = document.createElement('div');
+      text.className = 'slider-text';
+      const label = document.createElement('div');
+      label.className = 'slider-label';
       label.textContent = f.label;
+      text.appendChild(label);
       if (f.note){
-        const noteEl = document.createElement('span');
-        noteEl.style.fontWeight = '400';
-        noteEl.style.fontSize = '0.8em';
-        noteEl.style.color = 'var(--ink-soft)';
-        noteEl.textContent = ' ' + f.note;
-        label.appendChild(noteEl);
+        const noteEl = document.createElement('div');
+        noteEl.className = 'slider-note';
+        noteEl.textContent = f.note;
+        text.appendChild(noteEl);
       }
-      field.appendChild(label);
-      const row = document.createElement('div');
-      row.className = 'slider-row';
+      field.appendChild(text);
+
+      const control = document.createElement('div');
+      control.className = 'slider-control';
       const range = document.createElement('input');
       range.type = 'range';
       range.min = '1';
@@ -336,9 +370,10 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       valSpan.className = 'slider-val';
       valSpan.textContent = range.value;
       range.addEventListener('input', () => { valSpan.textContent = range.value; });
-      row.appendChild(range);
-      row.appendChild(valSpan);
-      field.appendChild(row);
+      control.appendChild(range);
+      control.appendChild(valSpan);
+      field.appendChild(control);
+
       inputs[f.key] = range;
       app.appendChild(field);
     } else {

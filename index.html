@@ -84,6 +84,21 @@
     flex: 1 1 260px;
     max-width: 400px;
   }
+  .metivta-board-col thead th{
+    font-size: 14px;
+    padding: 5px 4px;
+  }
+  .metivta-board-col td{
+    padding: 5px 4px;
+  }
+  .metivta-board-col .cell-text,
+  .metivta-board-col .point-val,
+  .metivta-board-col .status-val,
+  .metivta-board-col .merged-dropdown-toggle{
+    font-size: 14px !important;
+    height: auto !important;
+    padding: 0 !important;
+  }
 
   .toolbar{
     display:flex;
@@ -2101,21 +2116,10 @@ function renderMetivtaView(){
   boardsWrap.className = 'boards';
   boardsWrap.style.padding = '0';
 
-  const half = Math.ceil(TOTAL_STUDENTS / 2);
-  const firstHalf = state.students.slice(0, half);
-  const secondHalf = state.students.slice(half);
-
-  boardsWrap.appendChild(wrapMetivtaBoardCol(buildMetivtaBoard(firstHalf, false)));
-  boardsWrap.appendChild(wrapMetivtaBoardCol(buildMetivtaBoard(secondHalf, false)));
+  boardsWrap.appendChild(wrapMetivtaBoardCol(buildMetivtaBoard(state.students, false)));
 
   if (!Array.isArray(state.metivtaExtra)) state.metivtaExtra = [];
-
-  const extraHalf = Math.ceil(state.metivtaExtra.length / 2);
-  const extraFirstHalf = state.metivtaExtra.slice(0, extraHalf);
-  const extraSecondHalf = state.metivtaExtra.slice(extraHalf);
-
-  boardsWrap.appendChild(wrapMetivtaBoardCol(buildMetivtaBoard(extraFirstHalf, true)));
-  boardsWrap.appendChild(wrapMetivtaBoardCol(buildMetivtaBoard(extraSecondHalf, true)));
+  boardsWrap.appendChild(wrapMetivtaBoardCol(buildMetivtaBoard(state.metivtaExtra, true)));
 
   el.appendChild(boardsWrap);
 
@@ -2374,7 +2378,7 @@ function buildWeeklyViewDropdown(entry, weekStartD, container){
   toggle.type = 'button';
   toggle.className = 'merged-dropdown-toggle';
   if (currentMode === 'total'){
-    toggle.textContent = 'ארכיון · ' + formatHebrewDateShort(weekStartD) + ' – ' + formatHebrewDateShort((() => { const e = new Date(weekStartD); e.setDate(e.getDate() + 6); return e; })());
+    toggle.textContent = 'הנוסע המתמיד · ' + formatHebrewDateShort(weekStartD) + ' – ' + formatHebrewDateShort((() => { const e = new Date(weekStartD); e.setDate(e.getDate() + 6); return e; })());
   } else {
     const selectedDate = new Date(currentMode);
     const dIdx = Math.round((selectedDate.getTime() - new Date(dayKeyOf(weekStartD.toISOString())).getTime()) / 86400000);

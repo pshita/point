@@ -1830,8 +1830,6 @@ function renderFrequentFlyerView(){
   weeklyScrollWrap.className = 'weekly-tables-scroll';
   weeklyEntries.forEach(entry => renderWeeklyEntryInto(entry, weeklyScrollWrap));
   el.appendChild(weeklyScrollWrap);
-
-  fitAllTextCells();
 }
 
 function findMetivtaStatusStudent(studentId, isExtra){
@@ -2696,7 +2694,19 @@ function renderTodayHistoryTable(container){
 
   const table = document.createElement('table');
   table.className = 'archive-table';
-  table.style.width = 'max(100%, ' + (160 + days.length * 40) + 'px)';
+  table.style.tableLayout = 'fixed';
+  table.style.width = 'max(100%, ' + (160 + days.length * 46) + 'px)';
+
+  const colgroup = document.createElement('colgroup');
+  const nameCol = document.createElement('col');
+  nameCol.style.width = '160px';
+  colgroup.appendChild(nameCol);
+  days.forEach(() => {
+    const dayCol = document.createElement('col');
+    dayCol.style.width = '46px';
+    colgroup.appendChild(dayCol);
+  });
+  table.appendChild(colgroup);
 
   const thead = document.createElement('thead');
 
@@ -2707,11 +2717,14 @@ function renderTodayHistoryTable(container){
   days.forEach((entry, dayIndex) => {
     const th = document.createElement('th');
     th.style.cursor = 'pointer';
+    th.style.whiteSpace = 'normal';
+    th.style.lineHeight = '1.2';
     const d = new Date(entry.date);
     const dateLine = formatHebrewDateShort(d) + (entry.isLive ? ' (היום)' : '');
     const weekdayLine = d.toLocaleDateString('he-IL', { weekday: 'short' });
     th.innerHTML = '';
     const dateSpan = document.createElement('div');
+    dateSpan.style.fontSize = '0.85em';
     dateSpan.textContent = dateLine + (todayArchiveSortIndex === dayIndex ? ' ▼' : '');
     const weekdaySpan = document.createElement('div');
     weekdaySpan.textContent = weekdayLine;

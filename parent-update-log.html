@@ -73,27 +73,62 @@
     border-collapse: collapse;
     width: 100%;
   }
+  table.log-table{ table-layout: fixed; }
   table.log-table th{
     background: var(--gold-bg);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 700;
-    padding: 8px 6px;
+    padding: 6px 4px;
     border-bottom: 2px solid var(--gold);
     border-left: 1px solid var(--line);
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
+    line-height: 1.2;
+    width: 70px;
   }
+  table.log-table th:nth-child(2){ width: 90px; }
+  table.log-table th:nth-child(3){ width: 90px; }
   table.log-table td{
     font-size: 13px;
     text-align: center;
-    padding: 8px 6px;
+    padding: 8px 4px;
     border-bottom: 1px solid var(--line);
     border-left: 1px solid var(--line);
-    white-space: nowrap;
+    overflow-wrap: break-word;
   }
   table.log-table th:first-child,
   table.log-table td:first-child{ border-left: none; }
   table.log-table tr:nth-child(even){ background: #FCFBF6; }
+  table.links-table{
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 28px;
+  }
+  table.links-table th{
+    background: var(--gold-bg);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 10px;
+    border-bottom: 2px solid var(--gold);
+    text-align: right;
+  }
+  table.links-table td{
+    font-size: 13px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+  }
+  table.links-table tr:nth-child(even){ background: #FCFBF6; }
+  table.links-table a{
+    color: var(--ink);
+    word-break: break-all;
+  }
+  .section-title{
+    font-family: 'Frank Ruhl Libre', serif;
+    font-size: 17px;
+    margin: 28px 0 10px;
+  }
+  .section-title:first-of-type{ margin-top: 0; }
   .loading, .empty, .err{
     text-align: center;
     color: var(--ink-soft);
@@ -114,13 +149,20 @@ const STORAGE_KEY = 'classroom-points-v1';
 const FIRESTORE_COLLECTION = 'classroom_points';
 const ACCESS_CODE = '963';
 
+// Keep this list in sync with STUDENT_NAMES in index.html / parent-update.html.
+const STUDENT_NAMES = [
+  'צאלי', 'ישרוליק', 'נתנאל', 'מענדי ה.', 'מענדי ח.', 'אלעאי', 'יהונתן', 'איתן', 'מענדי ל.', 'שלוימי', 'מוישלה', 'לוי ס.',
+  'שמוליק ע.', 'מולי', 'שלום', 'חננאל', 'שמוליק צ.', 'אושר', 'שמעון', 'מוטי', 'לוי ק.', 'נועם', 'משה'
+];
+
+// Keep these labels in sync with WEEKLY_PARENT_FIELD_DEFS in index.html.
 const FIELD_LABELS = {
-  chitas: 'לימוד חת"ת',
-  shema: 'קריאת שמע שעל המיטה',
-  netilatYadaim: 'נטילת ידיים על יד המיטה',
-  minchaMaariv: 'תפילות מנחה וערבית במניין',
-  mikveh: 'מקווה בערב שבת',
-  dvarTorah: 'דבר תורה בסעודת שבת'
+  chitas: 'חת"ת',
+  shema: 'ק"ש שעל המיטה',
+  netilatYadaim: 'נטילה בבוקר',
+  minchaMaariv: 'מנחה/ערבית',
+  mikveh: 'מקווה ע"ש',
+  dvarTorah: 'ד"ת בסעודה'
 };
 const FIELD_ORDER = ['chitas', 'shema', 'netilatYadaim', 'minchaMaariv', 'mikveh', 'dvarTorah'];
 
@@ -161,6 +203,41 @@ function showCodePrompt(){
   btn.addEventListener('click', trySubmit);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') trySubmit(); });
   setTimeout(() => input.focus(), 50);
+}
+
+function buildLinksTable(){
+  const table = document.createElement('table');
+  table.className = 'links-table';
+
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  ['תלמיד', 'קישור אישי'].forEach(label => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  STUDENT_NAMES.forEach((name, idx) => {
+    const id = idx + 1;
+    const url = new URL('parent-update.html?id=' + id, location.href).href;
+    const tr = document.createElement('tr');
+    const nameTd = document.createElement('td');
+    nameTd.textContent = name;
+    tr.appendChild(nameTd);
+    const linkTd = document.createElement('td');
+    const a = document.createElement('a');
+    a.href = url;
+    a.textContent = url;
+    a.target = '_blank';
+    linkTd.appendChild(a);
+    tr.appendChild(linkTd);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
 }
 
 function buildLogTable(entries){
@@ -210,6 +287,17 @@ async function renderLog(){
   const h1 = document.createElement('h1');
   h1.textContent = 'היסטוריית עדכוני הורים';
   app.appendChild(h1);
+
+  const linksTitle = document.createElement('div');
+  linksTitle.className = 'section-title';
+  linksTitle.textContent = 'קישורים אישיים לפי תלמיד';
+  app.appendChild(linksTitle);
+  app.appendChild(buildLinksTable());
+
+  const logTitle = document.createElement('div');
+  logTitle.className = 'section-title';
+  logTitle.textContent = 'תשובות שהתקבלו';
+  app.appendChild(logTitle);
 
   const status = document.createElement('div');
   status.className = 'loading';

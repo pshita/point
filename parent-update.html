@@ -45,7 +45,7 @@
     margin: 14px 0;
   }
   .field{
-    margin: 18px 0;
+    margin: 30px 0;
   }
   select{
     width: 100%;
@@ -59,7 +59,7 @@
   .top-fields-row{
     display: flex;
     gap: 12px;
-    margin: 18px 0;
+    margin: 30px 0;
   }
   .top-fields-row .field{
     flex: 1 1 0;
@@ -362,7 +362,7 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       control.className = 'slider-control';
       const range = document.createElement('input');
       range.type = 'range';
-      range.min = '1';
+      range.min = '0';
       range.max = '7';
       range.step = '1';
       range.value = '7';
@@ -370,8 +370,8 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       valSpan.className = 'slider-val';
       valSpan.textContent = range.value;
       range.addEventListener('input', () => { valSpan.textContent = range.value; });
-      control.appendChild(range);
       control.appendChild(valSpan);
+      control.appendChild(range);
       field.appendChild(control);
 
       inputs[f.key] = range;
@@ -403,7 +403,7 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       if (f.kind === 'slider'){
         const v = rec && typeof rec[f.key] === 'number' ? rec[f.key] : 7;
         inputs[f.key].value = String(v);
-        inputs[f.key].nextSibling.textContent = String(v);
+        inputs[f.key].previousSibling.textContent = String(v);
       } else {
         inputs[f.key].checked = rec && typeof rec[f.key] === 'boolean' ? rec[f.key] : true;
       }

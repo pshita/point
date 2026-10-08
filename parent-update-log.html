@@ -25,7 +25,7 @@
     font-family: 'Rubik', sans-serif;
   }
   .wrap{
-    max-width: 560px;
+    max-width: 1000px;
     margin: 0 auto;
     padding: 20px 16px 60px;
   }
@@ -65,17 +65,35 @@
     margin-top: 8px;
     min-height: 18px;
   }
-  .log-item{
-    font-size: 13px;
-    line-height: 1.6;
-    color: var(--ink-soft);
-    padding: 8px 0;
-    border-bottom: 1px solid var(--line);
+  .table-scroll{
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
-  .log-item .log-when{
+  table.log-table{
+    border-collapse: collapse;
+    width: 100%;
+  }
+  table.log-table th{
+    background: var(--gold-bg);
+    font-size: 12.5px;
     font-weight: 700;
-    color: var(--ink);
+    padding: 8px 6px;
+    border-bottom: 2px solid var(--gold);
+    border-left: 1px solid var(--line);
+    text-align: center;
+    white-space: nowrap;
   }
+  table.log-table td{
+    font-size: 13px;
+    text-align: center;
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  table.log-table th:first-child,
+  table.log-table td:first-child{ border-left: none; }
+  table.log-table tr:nth-child(even){ background: #FCFBF6; }
   .loading, .empty, .err{
     text-align: center;
     color: var(--ink-soft);
@@ -99,7 +117,7 @@ const ACCESS_CODE = '963';
 const FIELD_LABELS = {
   chitas: 'לימוד חת"ת',
   shema: 'קריאת שמע שעל המיטה',
-  netilatYadaim: 'נטילת ידיים בבוקר על יד המיטה',
+  netilatYadaim: 'נטילת ידיים על יד המיטה',
   minchaMaariv: 'תפילות מנחה וערבית במניין',
   mikveh: 'מקווה בערב שבת',
   dvarTorah: 'דבר תורה בסעודת שבת'
@@ -145,24 +163,46 @@ function showCodePrompt(){
   setTimeout(() => input.focus(), 50);
 }
 
-function formatLogEntry(entry){
-  const when = new Date(entry.submittedAt);
-  const whenStr = when.toLocaleDateString('he-IL') + ' ' + when.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-  const v = entry.values || {};
-  const parts = FIELD_ORDER.map(key => {
-    const label = FIELD_LABELS[key] || key;
-    const val = v[key];
-    if (typeof val === 'boolean') return label + ': ' + (val ? 'כן' : 'לא');
-    return label + ': ' + val;
+function buildLogTable(entries){
+  const scrollWrap = document.createElement('div');
+  scrollWrap.className = 'table-scroll';
+
+  const table = document.createElement('table');
+  table.className = 'log-table';
+
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  ['תאריך ושעה', 'תלמיד', 'שבוע', ...FIELD_ORDER.map(key => FIELD_LABELS[key] || key)].forEach(label => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    trh.appendChild(th);
   });
-  const row = document.createElement('div');
-  row.className = 'log-item';
-  const whenSpan = document.createElement('span');
-  whenSpan.className = 'log-when';
-  whenSpan.textContent = whenStr;
-  row.appendChild(whenSpan);
-  row.appendChild(document.createTextNode(' — ' + (entry.studentName || '') + ' — ' + (entry.weekLabel || '') + ' · ' + parts.join(', ')));
-  return row;
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  entries.forEach(entry => {
+    const when = new Date(entry.submittedAt);
+    const whenStr = when.toLocaleDateString('he-IL') + ' ' + when.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const v = entry.values || {};
+    const tr = document.createElement('tr');
+    [whenStr, entry.studentName || '', entry.weekLabel || ''].forEach(text => {
+      const td = document.createElement('td');
+      td.textContent = text;
+      tr.appendChild(td);
+    });
+    FIELD_ORDER.forEach(key => {
+      const td = document.createElement('td');
+      const val = v[key];
+      td.textContent = typeof val === 'boolean' ? (val ? '✓' : '—') : (val !== undefined ? val : '');
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  scrollWrap.appendChild(table);
+  return scrollWrap;
 }
 
 async function renderLog(){
@@ -171,10 +211,10 @@ async function renderLog(){
   h1.textContent = 'היסטוריית עדכוני הורים';
   app.appendChild(h1);
 
-  const list = document.createElement('div');
-  list.className = 'loading';
-  list.textContent = 'טוען…';
-  app.appendChild(list);
+  const status = document.createElement('div');
+  status.className = 'loading';
+  status.textContent = 'טוען…';
+  app.appendChild(status);
 
   try{
     const firebaseApp = initializeApp(firebaseConfig);
@@ -182,17 +222,20 @@ async function renderLog(){
     const logCollectionRef = collection(db, FIRESTORE_COLLECTION, STORAGE_KEY, 'parentUpdateLog');
     const q = query(logCollectionRef, orderBy('submittedAt', 'desc'), limit(200));
     const snaps = await getDocs(q);
-    list.className = '';
-    list.innerHTML = '';
+    status.remove();
     if (snaps.empty){
-      list.className = 'empty';
-      list.textContent = 'אין עדיין תשובות שהתקבלו.';
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'אין עדיין תשובות שהתקבלו.';
+      app.appendChild(empty);
       return;
     }
-    snaps.forEach(s => list.appendChild(formatLogEntry(s.data())));
+    const entries = [];
+    snaps.forEach(s => entries.push(s.data()));
+    app.appendChild(buildLogTable(entries));
   } catch(e){
-    list.className = 'err';
-    list.textContent = 'שגיאה בטעינת היסטוריית התשובות: ' + (e && e.message ? e.message : String(e));
+    status.className = 'err';
+    status.textContent = 'שגיאה בטעינת היסטוריית התשובות: ' + (e && e.message ? e.message : String(e));
   }
 }
 

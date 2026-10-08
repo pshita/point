@@ -739,14 +739,14 @@ function studentName(id){
   return STUDENT_NAMES[id - 1] || id;
 }
 
-// Display-only names used in the Metivta board/archive. Same order/index
-// (same id) as STUDENT_NAMES, so the underlying linkage to every other
-// page (main board, "הנוסע המתמיד", the parent-update log) stays correct -
-// only how the name is shown inside Metivta's own views changes.
-const METIVTA_NAMES = STUDENT_NAMES.slice();
-
+// Display-only names used in the Metivta board/archive, editable in-app and
+// stored in state.metivtaNames (keyed by id). Same id as STUDENT_NAMES, so
+// the underlying linkage to every other page (main board, "הנוסע המתמיד",
+// the parent-update log) stays correct - only how the name is shown inside
+// Metivta's own views changes.
 function metivtaStudentName(id){
-  return METIVTA_NAMES[id - 1] || studentName(id);
+  const custom = state.metivtaNames && state.metivtaNames[id];
+  return custom || studentName(id);
 }
 
 const TOTAL_STUDENTS = 23;
@@ -866,7 +866,7 @@ function defaultState(){
   for (let i = 1; i <= 23; i++){
     metivtaExtra.push({ id: i, metivta: { attendance: 0, behavior: 0 }, metivtaFrozen: { attendance: 0, behavior: 0 }, metivtaFlags: { ok: false, late: false, leftEarly: false, disturbCount: 0 } });
   }
-  return { students, metivtaExtra, mergedActive: MERGE_GROUPS.map(g => g[0]), minusShopActive: 'minus', archive: [], lastActivityDate: null, lastAutoResetDate: null };
+  return { students, metivtaExtra, mergedActive: MERGE_GROUPS.map(g => g[0]), minusShopActive: 'minus', archive: [], lastActivityDate: null, lastAutoResetDate: null, metivtaNames: {} };
 }
 
 function setStatus(msg){
@@ -946,6 +946,7 @@ async function loadState(){
         }
         if (typeof parsed.lastActivityDate === 'undefined') parsed.lastActivityDate = null;
         if (typeof parsed.lastAutoResetDate === 'undefined') parsed.lastAutoResetDate = null;
+        if (!parsed.metivtaNames || typeof parsed.metivtaNames !== 'object') parsed.metivtaNames = {};
         state = parsed;
         return;
       }
@@ -2070,6 +2071,25 @@ function buildMetivtaBoard(students, isExtra){
     numSpan.className = 'cell-text';
     numSpan.textContent = isExtra ? metivtaExtraName(student.id) : metivtaStudentName(student.id);
     numTd.appendChild(numSpan);
+    if (!isExtra){
+      numTd.style.cursor = 'pointer';
+      numTd.addEventListener('click', () => {
+        requireArchiveEditAccess(() => {
+          const current = metivtaStudentName(student.id);
+          const next = prompt('שם לתצוגה בלוח מתיבתא:', current);
+          if (next === null) return;
+          const trimmed = next.trim();
+          if (!state.metivtaNames || typeof state.metivtaNames !== 'object') state.metivtaNames = {};
+          if (trimmed && trimmed !== studentName(student.id)){
+            state.metivtaNames[student.id] = trimmed;
+          } else {
+            delete state.metivtaNames[student.id];
+          }
+          saveState();
+          renderMetivtaView();
+        });
+      });
+    }
     tr.appendChild(numTd);
 
     const statusTd = document.createElement('td');

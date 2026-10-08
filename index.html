@@ -185,23 +185,6 @@
     margin-bottom: 24px;
   }
 
-  .weekly-tables-scroll{
-    display: flex;
-    gap: 20px;
-    overflow-x: auto;
-    padding-bottom: 8px;
-    -webkit-overflow-scrolling: touch;
-  }
-  .weekly-tables-scroll .archive-entry{
-    flex: 0 0 auto;
-    margin-bottom: 0;
-    width: 440px;
-  }
-  .weekly-tables-scroll .archive-table{
-    width: 440px;
-    table-layout: fixed;
-  }
-
   .archive-date{
     background: var(--ink);
     color: var(--paper);
@@ -345,6 +328,13 @@
   }
   .archive-date .merged-dropdown-toggle{
     color: var(--paper);
+  }
+  .parent-log-link{
+    color: var(--gold);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: underline;
+    white-space: nowrap;
   }
   .merged-dropdown-toggle:focus{
     outline: 2px solid var(--gold);
@@ -1921,15 +1911,25 @@ function toggleFrequent(studentId, key){
   saveState();
 }
 
+let selectedWeeklyKey = null;
+
+function weeklyEntryLabel(entry){
+  return entry.weekParsha || ('שבוע ' + entry.weekKey);
+}
+
 function renderFrequentFlyerView(){
   const el = document.getElementById('frequentArchiveView');
   el.innerHTML = '';
 
   const weeklyEntries = getDisplayArchive().filter(e => e.type === 'weekly');
-  const weeklyScrollWrap = document.createElement('div');
-  weeklyScrollWrap.className = 'weekly-tables-scroll';
-  weeklyEntries.forEach(entry => renderWeeklyEntryInto(entry, weeklyScrollWrap));
-  el.appendChild(weeklyScrollWrap);
+  if (weeklyEntries.length === 0) return;
+
+  if (!selectedWeeklyKey || !weeklyEntries.find(e => e.weekKey === selectedWeeklyKey)){
+    selectedWeeklyKey = weeklyEntries[0].weekKey;
+  }
+  const selectedEntry = weeklyEntries.find(e => e.weekKey === selectedWeeklyKey) || weeklyEntries[0];
+
+  renderWeeklyEntryInto(selectedEntry, el, weeklyEntries);
 }
 
 function findMetivtaStatusStudent(studentId, isExtra){
@@ -2445,16 +2445,18 @@ let weeklyArchiveViewMode = {};
 
 const HEBREW_WEEKDAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
-function buildWeeklyViewDropdown(entry, weekStartD, container){
+function buildWeeklyViewDropdown(entry, weekStartD){
   const list = document.createElement('div');
   list.className = 'merged-dropdown-list merged-dropdown-list-right';
 
   const currentMode = weeklyArchiveViewMode[entry.weekKey] || 'total';
+  let currentLabel = 'סה"כ השבוע';
 
   const addOption = (value, label) => {
     const opt = document.createElement('div');
     opt.className = 'merged-dropdown-option';
     opt.textContent = label;
+    if (value === currentMode) currentLabel = label;
     opt.addEventListener('click', (e) => {
       e.stopPropagation();
       list.classList.remove('open');
@@ -2475,13 +2477,43 @@ function buildWeeklyViewDropdown(entry, weekStartD, container){
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'merged-dropdown-toggle';
-  if (currentMode === 'total'){
-    toggle.textContent = 'הנוסע המתמיד · ' + formatHebrewDateShort(weekStartD) + ' – ' + formatHebrewDateShort((() => { const e = new Date(weekStartD); e.setDate(e.getDate() + 6); return e; })());
-  } else {
-    const selectedDate = new Date(currentMode);
-    const dIdx = Math.round((selectedDate.getTime() - new Date(dayKeyOf(weekStartD.toISOString())).getTime()) / 86400000);
-    toggle.textContent = (HEBREW_WEEKDAY_NAMES[dIdx] ? HEBREW_WEEKDAY_NAMES[dIdx] + ' · ' + formatHebrewDateShort(selectedDate) : currentMode);
-  }
+  toggle.textContent = currentLabel;
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.merged-dropdown-list.open').forEach(l => {
+      if (l !== list) l.classList.remove('open');
+    });
+    list.classList.toggle('open');
+  });
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'merged-dropdown';
+  dropdown.appendChild(toggle);
+  dropdown.appendChild(list);
+  return dropdown;
+}
+
+function buildWeekSelectDropdown(allWeeklyEntries, selectedEntry){
+  const list = document.createElement('div');
+  list.className = 'merged-dropdown-list merged-dropdown-list-right';
+
+  allWeeklyEntries.forEach(weekEntry => {
+    const opt = document.createElement('div');
+    opt.className = 'merged-dropdown-option';
+    opt.textContent = weeklyEntryLabel(weekEntry);
+    opt.addEventListener('click', (e) => {
+      e.stopPropagation();
+      list.classList.remove('open');
+      selectedWeeklyKey = weekEntry.weekKey;
+      renderFrequentFlyerView();
+    });
+    list.appendChild(opt);
+  });
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'merged-dropdown-toggle';
+  toggle.textContent = weeklyEntryLabel(selectedEntry);
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     document.querySelectorAll('.merged-dropdown-list.open').forEach(l => {
@@ -2506,7 +2538,7 @@ const WEEKLY_PARENT_FIELD_DEFS = [
   { field: 'dvarTorah', label: 'ד"ת בסעודה', kind: 'weekly-bool' }
 ];
 
-function renderWeeklyEntryInto(entry, container){
+function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
   const entryWrap = document.createElement('div');
   entryWrap.className = 'archive-entry';
 
@@ -2516,16 +2548,19 @@ function renderWeeklyEntryInto(entry, container){
   const weekEndD = new Date(weekStartD);
   weekEndD.setDate(weekEndD.getDate() + 6);
 
-  dateEl.appendChild(buildWeeklyViewDropdown(entry, weekStartD, container));
+  const titleSpan = document.createElement('span');
+  titleSpan.textContent = 'הנוסע המתמיד';
+  dateEl.appendChild(titleSpan);
 
-  if (entry.weekParsha){
-    const parshaSpan = document.createElement('span');
-    parshaSpan.style.marginRight = '8px';
-    parshaSpan.style.color = 'var(--ink-soft)';
-    parshaSpan.style.fontSize = '0.85em';
-    parshaSpan.textContent = entry.weekParsha;
-    dateEl.appendChild(parshaSpan);
-  }
+  dateEl.appendChild(buildWeekSelectDropdown(allWeeklyEntries || [entry], entry));
+  dateEl.appendChild(buildWeeklyViewDropdown(entry, weekStartD));
+
+  const logLink = document.createElement('a');
+  logLink.href = 'parent-update-log.html';
+  logLink.target = '_blank';
+  logLink.className = 'parent-log-link';
+  logLink.textContent = 'עדכוני הורים';
+  dateEl.appendChild(logLink);
 
   const exportBtn = document.createElement('button');
   exportBtn.className = 'export-btn';

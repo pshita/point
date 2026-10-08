@@ -200,6 +200,13 @@
     gap: 10px;
     flex-wrap: wrap;
   }
+  .weekly-header-row-nowrap{
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .weekly-header-row-nowrap > *{
+    flex-shrink: 0;
+  }
 
   .export-btn{
     background: var(--gold);
@@ -361,6 +368,10 @@
   .merged-dropdown-list-right{
     left: auto;
     right: 0;
+  }
+  .merged-dropdown-list-up{
+    top: auto;
+    bottom: 100%;
   }
 
   .merged-dropdown-option{
@@ -740,7 +751,7 @@
 
   <div class="archive-view" id="frequentArchiveView" style="padding: 0 20px 20px;"></div>
 
-  <div class="archive-view" id="metivtaView" style="display:none; padding: 0 20px 20px;"></div>
+  <div class="archive-view" id="metivtaView" style="display:none; padding: 20px 20px;"></div>
 </div>
 
 <script type="module">
@@ -2262,6 +2273,7 @@ function renderMetivtaView(){
   el.appendChild(boardsWrap);
 
   const metivtaHistoryEl = document.createElement('div');
+  metivtaHistoryEl.style.marginTop = '24px';
   el.appendChild(metivtaHistoryEl);
   renderMetivtaHistoryTable(metivtaHistoryEl);
 
@@ -2594,19 +2606,43 @@ function buildWeekDaySelectDropdown(allWeeklyEntries, selectedEntry){
 
 const WEEKLY_PARENT_FIELD_DEFS = [
   { field: 'chitas', label: 'חת"ת', kind: 'weekly-number' },
-  { field: 'shema', label: 'ק"ש שעל המיטה', kind: 'weekly-number' },
-  { field: 'netilatYadaim', label: 'נטילה בבוקר', kind: 'weekly-number' },
-  { field: 'minchaMaariv', label: 'מנחה/ערבית', kind: 'weekly-number' },
-  { field: 'mikveh', label: 'מקווה ע"ש', kind: 'weekly-bool' },
-  { field: 'dvarTorah', label: 'ד"ת בסעודה', kind: 'weekly-bool' }
+  { field: 'shema', label: 'קריאת שמע', kind: 'weekly-number' },
+  { field: 'netilatYadaim', label: 'נטילת ידיים', kind: 'weekly-number' },
+  { field: 'minchaMaariv', label: 'מנחה מעריב', kind: 'weekly-number' },
+  { field: 'mikveh', label: 'מקווה שישי', kind: 'weekly-bool' },
+  { field: 'dvarTorah', label: 'שיחה', kind: 'weekly-bool' }
 ];
+
+function fitHeaderCellToWidestWord(th){
+  const label = th.dataset.fitLabel;
+  if (!label) return;
+  const words = label.split(' ');
+  const cs = getComputedStyle(th);
+  const span = document.createElement('span');
+  span.style.position = 'fixed';
+  span.style.top = '-9999px';
+  span.style.whiteSpace = 'nowrap';
+  span.style.fontFamily = cs.fontFamily;
+  span.style.fontWeight = cs.fontWeight;
+  span.style.fontSize = cs.fontSize;
+  document.body.appendChild(span);
+  let maxWordWidth = 0;
+  words.forEach(w => {
+    span.textContent = w;
+    maxWordWidth = Math.max(maxWordWidth, span.getBoundingClientRect().width);
+  });
+  span.remove();
+  const padding = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const border = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+  th.style.width = Math.ceil(maxWordWidth + padding + border + 4) + 'px';
+}
 
 function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
   const entryWrap = document.createElement('div');
   entryWrap.className = 'archive-entry';
 
   const dateEl = document.createElement('div');
-  dateEl.className = 'archive-date weekly-header-row';
+  dateEl.className = 'archive-date weekly-header-row weekly-header-row-nowrap';
   const weekStartD = new Date(entry.weekStart);
   const weekEndD = new Date(weekStartD);
   weekEndD.setDate(weekEndD.getDate() + 6);
@@ -2626,7 +2662,7 @@ function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
 
   const exportBtn = document.createElement('button');
   exportBtn.className = 'export-btn';
-  exportBtn.textContent = 'הורדת אקסל';
+  exportBtn.textContent = 'אקסל';
   exportBtn.addEventListener('click', () => exportWeeklyCSV(entry, weekStartD, weekEndD));
   dateEl.appendChild(exportBtn);
 
@@ -2634,6 +2670,7 @@ function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
 
   const table = document.createElement('table');
   table.className = 'archive-table';
+  table.style.tableLayout = 'fixed';
 
   const thead = document.createElement('thead');
   const trh = document.createElement('tr');
@@ -2651,9 +2688,14 @@ function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
   const viewMode = weeklyArchiveViewMode[entry.weekKey] || 'total';
   const isDayView = viewMode !== 'total';
 
+  const isParentField = (field) => WEEKLY_PARENT_FIELD_DEFS.some(f => f.field === field);
   fieldDefs.forEach(({ field, label }) => {
     const th = document.createElement('th');
     th.style.cursor = 'pointer';
+    if (isParentField(field)){
+      th.style.whiteSpace = 'normal';
+      th.dataset.fitLabel = label;
+    }
     th.textContent = label + (currentSortField === field ? ' ▼' : '');
     th.addEventListener('click', () => {
       weeklyArchiveSortField[entry.weekKey] = field;
@@ -2741,6 +2783,8 @@ function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
   table.appendChild(tbody);
   entryWrap.appendChild(table);
   container.appendChild(entryWrap);
+
+  trh.querySelectorAll('th[data-fit-label]').forEach(fitHeaderCellToWidestWord);
 }
 
 let historyMergedActive = {};
@@ -2786,11 +2830,11 @@ function setHistoryActive(dayKey, groupType, key){
   if (todayHistoryContainerEl) renderTodayHistoryTable(todayHistoryContainerEl);
 }
 
-function buildHistoryDropdown(dayKey, groupType, options){
+function buildHistoryDropdown(dayKey, groupType, options, openUp){
   const activeKey = getHistoryActive(dayKey, groupType, options[0].key);
 
   const list = document.createElement('div');
-  list.className = 'merged-dropdown-list merged-dropdown-list-right';
+  list.className = 'merged-dropdown-list merged-dropdown-list-right' + (openUp ? ' merged-dropdown-list-up' : '');
   options.forEach(opt => {
     const optEl = document.createElement('div');
     optEl.className = 'merged-dropdown-option';
@@ -2896,6 +2940,12 @@ function renderTodayHistoryTable(container){
   titleSpan.textContent = 'ארכיון';
   dateEl.appendChild(titleSpan);
 
+  const titleSep = document.createElement('span');
+  titleSep.textContent = '·';
+  dateEl.appendChild(titleSep);
+
+  dateEl.appendChild(buildHistoryDropdown('archive_shared', groupType, allOptions, true));
+
   const exportBtn = document.createElement('button');
   exportBtn.className = 'export-btn';
   exportBtn.textContent = 'הורדת אקסל';
@@ -2924,7 +2974,7 @@ function renderTodayHistoryTable(container){
 
   const trDate = document.createElement('tr');
   const nameTh = document.createElement('th');
-  nameTh.appendChild(buildHistoryDropdown('archive_shared', groupType, allOptions));
+  nameTh.textContent = 'שם';
   trDate.appendChild(nameTh);
   days.forEach((entry, dayIndex) => {
     const th = document.createElement('th');
@@ -3128,7 +3178,10 @@ document.addEventListener('click', () => {
   }
 });
 
+let lastViewportWidth = window.innerWidth;
 window.addEventListener('resize', () => {
+  if (window.innerWidth === lastViewportWidth) return;
+  lastViewportWidth = window.innerWidth;
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(fitAllTextCells, 150);
 });

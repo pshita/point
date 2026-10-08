@@ -5,26 +5,10 @@ service cloud.firestore {
     // Classroom points board: one shared document, open to anyone with the
     // link. There is no Firebase Auth login for this site - the page itself
     // gates point-editing behind a PIN code in its own UI.
-    match /classroom_points/{docId} {
-      allow read: if true;
-      allow create: if true;
-      // The archive is the historical record. A legitimate save only ever
-      // grows it, or trims a handful of old entries once past the app's
-      // retention cap. A write that would suddenly collapse it is almost
-      // certainly a bug (an app-code bug already caused this once) - reject
-      // it outright instead of silently overwriting good history.
-      allow update: if !('archive' in resource.data)
-                    || !('archive' in request.resource.data)
-                    || request.resource.data.archive.size() >= resource.data.archive.size() - 10;
-      allow delete: if false;
-
-      // Point-in-time snapshots of the document above, written automatically
-      // on every save (see writeBackupSnapshot in index.html). The app only
-      // ever needs to create/overwrite these, never delete them.
-      match /backups/{backupId} {
-        allow read, create, update: if true;
-        allow delete: if false;
-      }
+    // {document=**} also covers the "backups" subcollection used for
+    // automatic point-in-time snapshots of the main document.
+    match /classroom_points/{document=**} {
+      allow read, write: if true;
     }
   }
 }

@@ -382,6 +382,40 @@
     background: var(--gold-bg);
   }
 
+  .parsha-option{
+    padding: 0;
+    text-align: right;
+  }
+  .parsha-option-label{
+    padding: 10px 14px;
+  }
+  .parsha-option-label::after{
+    content: ' ▸';
+    font-size: 0.8em;
+    color: var(--ink-soft);
+  }
+  .parsha-option.open .parsha-option-label::after{
+    content: ' ▾';
+  }
+  .merged-dropdown-sublist{
+    display: none;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
+  }
+  .parsha-option.open .merged-dropdown-sublist{
+    display: block;
+  }
+  .merged-dropdown-sublist .merged-dropdown-option{
+    padding-right: 28px;
+    font-size: 0.9em;
+    font-weight: 500;
+  }
+  .merged-dropdown-option-active{
+    color: var(--gold);
+    font-weight: 700;
+  }
+
   .col-reset-btn{
     font-family: 'Rubik', sans-serif;
     font-weight: 700;
@@ -2445,75 +2479,73 @@ let weeklyArchiveViewMode = {};
 
 const HEBREW_WEEKDAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
-function buildWeeklyViewDropdown(entry, weekStartD){
-  const list = document.createElement('div');
-  list.className = 'merged-dropdown-list merged-dropdown-list-right';
-
-  const currentMode = weeklyArchiveViewMode[entry.weekKey] || 'total';
-  let currentLabel = 'סה"כ השבוע';
-
-  const addOption = (value, label) => {
-    const opt = document.createElement('div');
-    opt.className = 'merged-dropdown-option';
-    opt.textContent = label;
-    if (value === currentMode) currentLabel = label;
-    opt.addEventListener('click', (e) => {
-      e.stopPropagation();
-      list.classList.remove('open');
-      weeklyArchiveViewMode[entry.weekKey] = value;
-      renderFrequentFlyerView();
-    });
-    list.appendChild(opt);
-  };
-
-  addOption('total', 'סה"כ השבוע');
-  for (let i = 0; i < 7; i++){
-    const d = new Date(weekStartD);
-    d.setDate(d.getDate() + i);
-    const dKey = dayKeyOf(d.toISOString());
-    addOption(dKey, HEBREW_WEEKDAY_NAMES[i] + ' · ' + formatHebrewDateShort(d));
-  }
-
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'merged-dropdown-toggle';
-  toggle.textContent = currentLabel;
-  toggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    document.querySelectorAll('.merged-dropdown-list.open').forEach(l => {
-      if (l !== list) l.classList.remove('open');
-    });
-    list.classList.toggle('open');
-  });
-
-  const dropdown = document.createElement('div');
-  dropdown.className = 'merged-dropdown';
-  dropdown.appendChild(toggle);
-  dropdown.appendChild(list);
-  return dropdown;
+function dayLabelWithinWeek(weekStartD, dayKeyStr){
+  const selectedDate = new Date(dayKeyStr);
+  const dIdx = Math.round((selectedDate.getTime() - new Date(dayKeyOf(weekStartD.toISOString())).getTime()) / 86400000);
+  return HEBREW_WEEKDAY_NAMES[dIdx] ? HEBREW_WEEKDAY_NAMES[dIdx] + ' · ' + formatHebrewDateShort(selectedDate) : dayKeyStr;
 }
 
-function buildWeekSelectDropdown(allWeeklyEntries, selectedEntry){
+// One dropdown, nested: the outer list is the parshas/weeks; clicking a
+// parsha expands a sub-list of that week's days (or "total") right under it,
+// instead of opening a second, separate dropdown.
+function buildWeekDaySelectDropdown(allWeeklyEntries, selectedEntry){
+  const currentMode = weeklyArchiveViewMode[selectedEntry.weekKey] || 'total';
+
   const list = document.createElement('div');
   list.className = 'merged-dropdown-list merged-dropdown-list-right';
 
   allWeeklyEntries.forEach(weekEntry => {
-    const opt = document.createElement('div');
-    opt.className = 'merged-dropdown-option';
-    opt.textContent = weeklyEntryLabel(weekEntry);
-    opt.addEventListener('click', (e) => {
+    const weekStartD = new Date(weekEntry.weekStart);
+    const isSelectedWeek = weekEntry.weekKey === selectedEntry.weekKey;
+
+    const parshaRow = document.createElement('div');
+    parshaRow.className = 'merged-dropdown-option parsha-option' + (isSelectedWeek ? ' open' : '');
+
+    const parshaLabel = document.createElement('div');
+    parshaLabel.className = 'parsha-option-label';
+    parshaLabel.textContent = weeklyEntryLabel(weekEntry);
+    parshaRow.appendChild(parshaLabel);
+
+    const subList = document.createElement('div');
+    subList.className = 'merged-dropdown-sublist';
+
+    const addDayOption = (value, label) => {
+      const isActive = isSelectedWeek && value === currentMode;
+      const dayOpt = document.createElement('div');
+      dayOpt.className = 'merged-dropdown-option' + (isActive ? ' merged-dropdown-option-active' : '');
+      dayOpt.textContent = label;
+      dayOpt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectedWeeklyKey = weekEntry.weekKey;
+        weeklyArchiveViewMode[weekEntry.weekKey] = value;
+        document.querySelectorAll('.merged-dropdown-list.open').forEach(l => l.classList.remove('open'));
+        renderFrequentFlyerView();
+      });
+      subList.appendChild(dayOpt);
+    };
+
+    addDayOption('total', 'סה"כ השבוע');
+    for (let i = 0; i < 7; i++){
+      const d = new Date(weekStartD);
+      d.setDate(d.getDate() + i);
+      addDayOption(dayKeyOf(d.toISOString()), HEBREW_WEEKDAY_NAMES[i] + ' · ' + formatHebrewDateShort(d));
+    }
+    parshaRow.appendChild(subList);
+
+    parshaRow.addEventListener('click', (e) => {
       e.stopPropagation();
-      list.classList.remove('open');
-      selectedWeeklyKey = weekEntry.weekKey;
-      renderFrequentFlyerView();
+      const alreadyOpen = parshaRow.classList.contains('open');
+      list.querySelectorAll('.parsha-option.open').forEach(p => p.classList.remove('open'));
+      if (!alreadyOpen) parshaRow.classList.add('open');
     });
-    list.appendChild(opt);
+    list.appendChild(parshaRow);
   });
 
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'merged-dropdown-toggle';
-  toggle.textContent = weeklyEntryLabel(selectedEntry);
+  const weekStartD = new Date(selectedEntry.weekStart);
+  toggle.textContent = weeklyEntryLabel(selectedEntry) + (currentMode === 'total' ? '' : ' · ' + dayLabelWithinWeek(weekStartD, currentMode));
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     document.querySelectorAll('.merged-dropdown-list.open').forEach(l => {
@@ -2552,8 +2584,7 @@ function renderWeeklyEntryInto(entry, container, allWeeklyEntries){
   titleSpan.textContent = 'הנוסע המתמיד';
   dateEl.appendChild(titleSpan);
 
-  dateEl.appendChild(buildWeekSelectDropdown(allWeeklyEntries || [entry], entry));
-  dateEl.appendChild(buildWeeklyViewDropdown(entry, weekStartD));
+  dateEl.appendChild(buildWeekDaySelectDropdown(allWeeklyEntries || [entry], entry));
 
   const logLink = document.createElement('a');
   logLink.href = 'parent-update-log.html';

@@ -739,6 +739,16 @@ function studentName(id){
   return STUDENT_NAMES[id - 1] || id;
 }
 
+// Display-only names used in the Metivta board/archive. Same order/index
+// (same id) as STUDENT_NAMES, so the underlying linkage to every other
+// page (main board, "הנוסע המתמיד", the parent-update log) stays correct -
+// only how the name is shown inside Metivta's own views changes.
+const METIVTA_NAMES = STUDENT_NAMES.slice();
+
+function metivtaStudentName(id){
+  return METIVTA_NAMES[id - 1] || studentName(id);
+}
+
 const TOTAL_STUDENTS = 23;
 const STORAGE_KEY = 'classroom-points-v1';
 const FIRESTORE_COLLECTION = 'classroom_points';
@@ -2086,7 +2096,7 @@ function buildMetivtaBoard(students, isExtra){
     numTd.className = 'num-cell';
     const numSpan = document.createElement('span');
     numSpan.className = 'cell-text';
-    numSpan.textContent = isExtra ? metivtaExtraName(student.id) : studentName(student.id);
+    numSpan.textContent = isExtra ? metivtaExtraName(student.id) : metivtaStudentName(student.id);
     numTd.appendChild(numSpan);
     tr.appendChild(numTd);
 
@@ -2183,7 +2193,7 @@ async function exportMetivtaArchiveCSV(days){
     });
     const rows = [headers];
     state.students.forEach(student => {
-      const row = [studentName(student.id)];
+      const row = [metivtaStudentName(student.id)];
       days.forEach(entry => {
         const s = entry.students.find(x => x.id === student.id);
         row.push(metivtaDayLabelLegacyAware(s));
@@ -2271,7 +2281,7 @@ function renderMetivtaHistoryTable(container){
   const tbody = document.createElement('tbody');
 
   const mainRows = state.students.map(student => ({
-    name: studentName(student.id),
+    name: metivtaStudentName(student.id),
     getRecord: (entry) => entry.students.find(x => x.id === student.id) || null,
     ensureRecord: (entry) => entry.students.find(x => x.id === student.id) || null
   }));

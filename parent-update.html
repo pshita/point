@@ -396,7 +396,7 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   logSection.className = 'log-section';
   const logTitle = document.createElement('div');
   logTitle.className = 'log-title';
-  logTitle.textContent = 'תשובות שנשלחו';
+  logTitle.textContent = 'תשובות שהתקבלו';
   logSection.appendChild(logTitle);
   const logList = document.createElement('div');
   logSection.appendChild(logList);
@@ -423,7 +423,7 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       const snaps = await getDocs(q);
       logList.innerHTML = '';
       if (snaps.empty){
-        logList.textContent = 'אין עדיין תשובות שנשלחו.';
+        logList.textContent = 'אין עדיין תשובות שהתקבלו.';
         return;
       }
       snaps.forEach(s => {

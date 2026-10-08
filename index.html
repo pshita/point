@@ -757,10 +757,6 @@ const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 const firestoreDb = firebaseApp ? getFirestore(firebaseApp) : null;
 const stateDocRef = firestoreDb ? doc(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY) : null;
 
-function backupDocRef(id){
-  return doc(firestoreDb, FIRESTORE_COLLECTION, STORAGE_KEY, 'backups', id);
-}
-
 let lastSyncedStateJson = null;
 
 async function storageGet(){
@@ -798,31 +794,9 @@ function mergeArchiveEntries(localArchive, remoteArchive){
   return result;
 }
 
-// Best-effort only: must NEVER be allowed to block or fail the real save
-// (e.g. if the backups subcollection isn't writable yet). Runs in its own
-// transaction, strictly after the main save already succeeded.
-async function writeBackupSnapshot(remote){
-  if (!remote) return;
-  try{
-    const todayBackupRef = backupDocRef(todayStr());
-    const latestBackupRef = backupDocRef('latest');
-    await runTransaction(firestoreDb, async (tx) => {
-      const todayBackupSnap = await tx.get(todayBackupRef);
-      const savedAt = new Date().toISOString();
-      tx.set(latestBackupRef, { savedAt, data: remote });
-      if (!todayBackupSnap.exists()){
-        tx.set(todayBackupRef, { savedAt, data: remote });
-      }
-    });
-  } catch(e){
-    // Backups are a nice-to-have. Swallow any failure here silently.
-  }
-}
-
 async function storageSet(value){
   try{
     const body = JSON.parse(value);
-    let remoteForBackup = null;
     await runTransaction(firestoreDb, async (tx) => {
       const snap = await tx.get(stateDocRef);
       if (snap.exists()){
@@ -830,14 +804,12 @@ async function storageSet(value){
         if (remote && Array.isArray(remote.archive)){
           body.archive = mergeArchiveEntries(body.archive, remote.archive);
         }
-        remoteForBackup = remote;
       }
       tx.set(stateDocRef, body);
     });
     state.archive = body.archive;
     const finalValue = JSON.stringify(body);
     lastSyncedStateJson = finalValue;
-    writeBackupSnapshot(remoteForBackup);
     return { value: finalValue };
   } catch(e){
     return null;

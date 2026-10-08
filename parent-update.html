@@ -89,6 +89,12 @@
     width: 22px;
     height: 22px;
   }
+  .checkbox-pair-row{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 24px;
+  }
   .submit-btn{
     width: 100%;
     padding: 14px;
@@ -263,7 +269,7 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   const intro = document.createElement('div');
   intro.className = 'intro';
   const introP1 = document.createElement('p');
-  introP1.style.margin = '0 0 10px';
+  introP1.style.margin = '0 0 4px';
   introP1.textContent = 'הורה יקר, מילוי המשימות חשוב מאוד, כדי שבנכם יתקדם ביראת שמים והנהגה חסידית.';
   intro.appendChild(introP1);
   const introP2 = document.createElement('p');
@@ -283,10 +289,12 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   });
   nameSelect.value = String(initialStudentId);
   nameField.appendChild(nameSelect);
+  nameField.style.margin = '18px 0 6px';
   app.appendChild(nameField);
 
   const weekField = document.createElement('div');
   weekField.className = 'field';
+  weekField.style.margin = '6px 0 18px';
   const weekSelect = document.createElement('select');
   weeks.forEach((w, idx) => {
     const opt = document.createElement('option');
@@ -303,10 +311,11 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   }
 
   const inputs = {};
+  let checkboxPairRow = null;
   FIELDS.forEach(f => {
-    const field = document.createElement('div');
-    field.className = 'field';
     if (f.kind === 'slider'){
+      const field = document.createElement('div');
+      field.className = 'field';
       const label = document.createElement('label');
       label.textContent = f.label;
       if (f.note){
@@ -334,7 +343,13 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       row.appendChild(valSpan);
       field.appendChild(row);
       inputs[f.key] = range;
+      app.appendChild(field);
     } else {
+      if (!checkboxPairRow){
+        checkboxPairRow = document.createElement('div');
+        checkboxPairRow.className = 'field checkbox-pair-row';
+        app.appendChild(checkboxPairRow);
+      }
       const row = document.createElement('label');
       row.className = 'checkbox-row';
       const cb = document.createElement('input');
@@ -344,10 +359,9 @@ function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
       const span = document.createElement('span');
       span.textContent = f.label;
       row.appendChild(span);
-      field.appendChild(row);
+      checkboxPairRow.appendChild(row);
       inputs[f.key] = cb;
     }
-    app.appendChild(field);
   });
 
   function loadValuesForWeek(){

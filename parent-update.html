@@ -37,10 +37,6 @@
     font-size: 22px;
     margin: 0 0 4px;
   }
-  .student-name{
-    color: var(--gold);
-    font-weight: 700;
-  }
   .intro{
     font-size: 14px;
     line-height: 1.6;
@@ -155,10 +151,6 @@ const FIRESTORE_COLLECTION = 'classroom_points';
 // anything earlier than this - there is no data to report before it existed.
 const LAUNCH_WEEK_START = '2026-10-04';
 
-function studentName(id){
-  return STUDENT_NAMES[id - 1] || String(id);
-}
-
 function getWeekStart(date){
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -172,10 +164,10 @@ function dateKey(d){
 
 const FIELDS = [
   { key: 'chitas', label: 'לימוד חת"ת', kind: 'slider' },
-  { key: 'shema', label: 'קריאת שמע שעל המיטה (אחרי בר מצווה, עם כובע וחליפה)', kind: 'slider' },
+  { key: 'shema', label: 'קריאת שמע שעל המיטה', note: 'אחרי בר מצווה, עם כובע וחליפה', kind: 'slider' },
   { key: 'netilatYadaim', label: 'נטילת ידיים בבוקר על יד המיטה', kind: 'slider' },
-  { key: 'minchaMaariv', label: 'תפילות מנחה וערבית במניין (ושחרית בזמני חופשה)', kind: 'slider' },
-  { key: 'mikveh', label: 'מקווה בערב שבת (רצוי בליווי מבוגר)', kind: 'checkbox' },
+  { key: 'minchaMaariv', label: 'תפילות מנחה וערבית במניין', note: 'ושחרית בזמני חופשה', kind: 'slider' },
+  { key: 'mikveh', label: 'מקווה בערב שבת', kind: 'checkbox' },
   { key: 'dvarTorah', label: 'דבר תורה בסעודת שבת', kind: 'checkbox' }
 ];
 
@@ -225,11 +217,8 @@ async function main(){
   }
 
   const params = new URLSearchParams(location.search);
-  const studentId = parseInt(params.get('id'), 10);
-  if (!studentId || studentId < 1 || studentId > TOTAL_STUDENTS){
-    showError('קישור לא תקין. יש לבקש מהמורה את הקישור האישי הנכון.');
-    return;
-  }
+  let studentId = parseInt(params.get('id'), 10);
+  if (!studentId || studentId < 1 || studentId > TOTAL_STUDENTS) studentId = 1;
 
   const firebaseApp = initializeApp(firebaseConfig);
   const db = getFirestore(firebaseApp);
@@ -262,7 +251,7 @@ function findStudentRecord(remoteData, weekKey, studentId){
   return entry.students.find(s => s.id === studentId) || null;
 }
 
-function renderForm(studentId, weeks, remoteData, db, stateDocRef){
+function renderForm(initialStudentId, weeks, remoteData, db, stateDocRef){
   app.innerHTML = '';
 
   const defaultWeekIdx = weeks.length > 1 ? weeks.length - 2 : 0;
@@ -271,23 +260,26 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
   h1.textContent = '"הנוסע המתמיד" - עדכון הורים';
   app.appendChild(h1);
 
-  const nameLine = document.createElement('div');
-  nameLine.innerHTML = 'עבור: <span class="student-name">' + studentName(studentId) + '</span>';
-  app.appendChild(nameLine);
-
   const intro = document.createElement('div');
   intro.className = 'intro';
+  intro.textContent = 'הורה יקר, מילוי המשימות חשוב מאוד, כדי שבנכם יתקדם ביראת שמים והנהגה חסידית. נודה מאוד על עדכון מצב מילוי המשימות בשבוע האחרון.';
   app.appendChild(intro);
 
-  function refreshIntro(){
-    intro.textContent = 'הורה יקר, מילוי המשימות חשוב מאוד, כדי שבנכם יתקדם ביראת שמים והנהגה חסידית. נודה מאוד על עדכון מצב מילוי המשימות בשבוע האחרון של ' + studentName(studentId) + '.';
-  }
+  const nameField = document.createElement('div');
+  nameField.className = 'field';
+  const nameSelect = document.createElement('select');
+  STUDENT_NAMES.forEach((name, idx) => {
+    const opt = document.createElement('option');
+    opt.value = String(idx + 1);
+    opt.textContent = name;
+    nameSelect.appendChild(opt);
+  });
+  nameSelect.value = String(initialStudentId);
+  nameField.appendChild(nameSelect);
+  app.appendChild(nameField);
 
   const weekField = document.createElement('div');
   weekField.className = 'field';
-  const weekLabelEl = document.createElement('label');
-  weekLabelEl.textContent = 'שבוע';
-  weekField.appendChild(weekLabelEl);
   const weekSelect = document.createElement('select');
   weeks.forEach((w, idx) => {
     const opt = document.createElement('option');
@@ -299,7 +291,9 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
   weekField.appendChild(weekSelect);
   app.appendChild(weekField);
 
-  refreshIntro();
+  function currentStudentId(){
+    return parseInt(nameSelect.value, 10);
+  }
 
   const inputs = {};
   FIELDS.forEach(f => {
@@ -309,6 +303,15 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
       const label = document.createElement('label');
       label.textContent = f.label;
       field.appendChild(label);
+      if (f.note){
+        const noteEl = document.createElement('div');
+        noteEl.style.fontWeight = '400';
+        noteEl.style.fontSize = '0.8em';
+        noteEl.style.color = 'var(--ink-soft)';
+        noteEl.style.margin = '-4px 0 6px';
+        noteEl.textContent = f.note;
+        field.appendChild(noteEl);
+      }
       const row = document.createElement('div');
       row.className = 'slider-row';
       const range = document.createElement('input');
@@ -316,7 +319,7 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
       range.min = '1';
       range.max = '7';
       range.step = '1';
-      range.value = '1';
+      range.value = '7';
       const valSpan = document.createElement('span');
       valSpan.className = 'slider-val';
       valSpan.textContent = range.value;
@@ -330,6 +333,7 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
       row.className = 'checkbox-row';
       const cb = document.createElement('input');
       cb.type = 'checkbox';
+      cb.checked = true;
       row.appendChild(cb);
       const span = document.createElement('span');
       span.textContent = f.label;
@@ -342,23 +346,21 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
 
   function loadValuesForWeek(){
     const w = weeks[weekSelect.selectedIndex];
-    const rec = findStudentRecord(remoteData, w.weekKey, studentId);
+    const rec = findStudentRecord(remoteData, w.weekKey, currentStudentId());
     FIELDS.forEach(f => {
       if (f.kind === 'slider'){
-        const v = rec && typeof rec[f.key] === 'number' ? rec[f.key] : 1;
+        const v = rec && typeof rec[f.key] === 'number' ? rec[f.key] : 7;
         inputs[f.key].value = String(v);
         inputs[f.key].nextSibling.textContent = String(v);
       } else {
-        inputs[f.key].checked = !!(rec && rec[f.key]);
+        inputs[f.key].checked = rec && typeof rec[f.key] === 'boolean' ? rec[f.key] : true;
       }
     });
   }
   loadValuesForWeek();
 
-  weekSelect.addEventListener('change', () => {
-    refreshIntro();
-    loadValuesForWeek();
-  });
+  weekSelect.addEventListener('change', loadValuesForWeek);
+  nameSelect.addEventListener('change', loadValuesForWeek);
 
   const submitBtn = document.createElement('button');
   submitBtn.type = 'button';
@@ -375,6 +377,7 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
     statusMsg.className = 'status-msg';
     statusMsg.textContent = 'שולח…';
     const w = weeks[weekSelect.selectedIndex];
+    const submitStudentId = currentStudentId();
     const values = {};
     FIELDS.forEach(f => {
       values[f.key] = f.kind === 'slider' ? parseInt(inputs[f.key].value, 10) : !!inputs[f.key].checked;
@@ -399,9 +402,9 @@ function renderForm(studentId, weeks, remoteData, db, stateDocRef){
           body.archive.unshift(weeklyEntry);
         }
         if (!Array.isArray(weeklyEntry.students)) weeklyEntry.students = [];
-        let studentRec = weeklyEntry.students.find(s => s.id === studentId);
+        let studentRec = weeklyEntry.students.find(s => s.id === submitStudentId);
         if (!studentRec){
-          studentRec = { id: studentId, morning: 0, tefila: 0, mikve: 0, minusDelta: 0, bonus: 0, days: {} };
+          studentRec = { id: submitStudentId, morning: 0, tefila: 0, mikve: 0, minusDelta: 0, bonus: 0, days: {} };
           weeklyEntry.students.push(studentRec);
         }
         Object.assign(studentRec, values);

@@ -90,9 +90,9 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    flex: 0 0 130px;
-    width: 130px;
-    margin-left: 20px;
+    flex: 0 0 120px;
+    width: 120px;
+    margin-left: 40px;
   }
   input[type="range"]{
     flex: 1;
@@ -302,6 +302,7 @@ function renderForm(initialStudentId, weeks, weeklyEntriesByKey, db){
   intro.appendChild(introP1);
   const introP2 = document.createElement('p');
   introP2.style.margin = '0';
+  introP2.style.fontSize = '16px';
   introP2.textContent = 'נודה מאוד על עדכון מצב מילוי המשימות בשבוע האחרון.';
   intro.appendChild(introP2);
   app.appendChild(intro);

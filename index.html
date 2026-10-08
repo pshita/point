@@ -1856,7 +1856,7 @@ function metivtaStatusParts(f){
 }
 
 function metivtaStatusLabel(f){
-  return metivtaStatusParts(f).join(', ');
+  return metivtaStatusParts(f).join(' · ');
 }
 
 function metivtaDayScore(f){
@@ -2063,17 +2063,7 @@ function buildMetivtaBoard(students, isExtra){
     statusTd.className = 'status-cell point-cell' + (hasException ? ' status-exception' : (flags.ok ? ' status-ok' : ''));
     const statusSpan = document.createElement('span');
     statusSpan.className = 'status-val';
-    const statusParts = metivtaStatusParts(flags);
-    if (statusParts.length > 1){
-      statusSpan.style.flexDirection = 'column';
-      statusParts.forEach(part => {
-        const line = document.createElement('div');
-        line.textContent = part;
-        statusSpan.appendChild(line);
-      });
-    } else {
-      statusSpan.textContent = statusParts[0] || '';
-    }
+    statusSpan.textContent = metivtaStatusParts(flags).join(' · ');
     statusTd.appendChild(statusSpan);
     statusTd.addEventListener('click', (e) => {
       if (e.target.closest('.status-plus-btn')) return;

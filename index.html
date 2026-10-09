@@ -880,18 +880,28 @@ async function fetchArchiveWeeks(){
 
 // One-time split of a pre-existing document that still has the archive
 // embedded in it (the old format) into the new, separate archive documents.
-// Safe to run more than once (e.g. two devices racing on the very first
-// load after this change ships): both would derive the split documents from
-// the same source archive and write the same content.
+// A stale browser tab still running the pre-split code (loaded before this
+// change shipped, never refreshed) has no idea about archiveSplitV1 - an
+// ordinary save from it can write the main doc back without that flag,
+// making this run again long after the real split already happened. At that
+// point mainData.archive no longer exists (the first split deleted it), so
+// treating that as "there was never anything to migrate" would silently
+// wipe the already-split daily archive and weekly docs. Guard against that
+// by checking whether the daily archive doc already exists - if it does,
+// the split already happened and this only needs to stamp the flag back
+// onto the main doc, never touch the archive documents again.
 async function migrateArchiveSplitIfNeeded(mainData){
   if (mainData.archiveSplitV1) return mainData;
-  const oldArchive = Array.isArray(mainData.archive) ? mainData.archive : [];
-  const days = oldArchive.filter(e => e.type !== 'weekly');
-  const weeks = oldArchive.filter(e => e.type === 'weekly');
   try{
-    await setDoc(dailyArchiveDocRef, { days });
-    for (const w of weeks){
-      await setDoc(weekDocRef(w.weekKey), w);
+    const alreadySplitSnap = await getDoc(dailyArchiveDocRef);
+    if (!alreadySplitSnap.exists()){
+      const oldArchive = Array.isArray(mainData.archive) ? mainData.archive : [];
+      const days = oldArchive.filter(e => e.type !== 'weekly');
+      const weeks = oldArchive.filter(e => e.type === 'weekly');
+      await setDoc(dailyArchiveDocRef, { days });
+      for (const w of weeks){
+        await setDoc(weekDocRef(w.weekKey), w);
+      }
     }
     const mainUpdate = JSON.parse(JSON.stringify(mainData));
     delete mainUpdate.archive;

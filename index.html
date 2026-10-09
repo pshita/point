@@ -915,22 +915,24 @@ async function migrateArchiveSplitIfNeeded(mainData){
   }
 }
 
+// Deliberately does not swallow errors into a null return - a transient
+// read failure must never look identical to "this document genuinely
+// doesn't exist yet", because loadState() treats the latter as license to
+// start from a blank slate. Confusing the two let a normal page load, on a
+// bad network blip, silently initialize with empty data that a single
+// subsequent save would then write over the real board.
 async function storageGet(){
-  try{
-    const snap = await getDoc(stateDocRef);
-    if (!snap.exists()) return null;
-    let mainData = snap.data();
-    if (!mainData.archiveSplitV1){
-      mainData = await migrateArchiveSplitIfNeeded(mainData);
-    }
-    lastSyncedMainJson = JSON.stringify(mainData);
-    const [days, weeks] = await Promise.all([fetchArchiveDays(), fetchArchiveWeeks()]);
-    mainData = JSON.parse(JSON.stringify(mainData));
-    mainData.archive = [...days, ...weeks];
-    return { value: JSON.stringify(mainData) };
-  } catch(e){
-    return null;
+  const snap = await getDoc(stateDocRef);
+  if (!snap.exists()) return null;
+  let mainData = snap.data();
+  if (!mainData.archiveSplitV1){
+    mainData = await migrateArchiveSplitIfNeeded(mainData);
   }
+  lastSyncedMainJson = JSON.stringify(mainData);
+  const [days, weeks] = await Promise.all([fetchArchiveDays(), fetchArchiveWeeks()]);
+  mainData = JSON.parse(JSON.stringify(mainData));
+  mainData.archive = [...days, ...weeks];
+  return { value: JSON.stringify(mainData) };
 }
 
 async function storageSet(value){
@@ -1011,85 +1013,86 @@ function setStatus(msg){
 }
 
 async function loadState(){
-  try{
-    const result = await storageGet();
-    if (result && result.value){
-      const parsed = JSON.parse(result.value);
-      if (parsed && Array.isArray(parsed.students) && parsed.students.length === TOTAL_STUDENTS){
-        if (!Array.isArray(parsed.mergedActive) || parsed.mergedActive.length !== MERGE_GROUPS.length){
-          parsed.mergedActive = MERGE_GROUPS.map(g => g[0]);
-        }
-        if (parsed.minusShopActive !== 'minus' && parsed.minusShopActive !== 'shop'){
-          parsed.minusShopActive = 'minus';
-        }
-        parsed.students.forEach(s => {
-          if (typeof s.purchases !== 'number') s.purchases = 0;
-          if (!s.cats) s.cats = {};
-          if (typeof s.cats.c5 !== 'number') s.cats.c5 = 0;
-          if (typeof s.cats.c6 !== 'number') s.cats.c6 = 0;
-          if (typeof s.cats.c7 !== 'number') s.cats.c7 = 0;
-          if (typeof s.cats.c8 !== 'number') s.cats.c8 = 0;
-          if (!s.frequent) s.frequent = { mikvaot: 0, rambam: 0 };
-          if (!s.frequentFrozen) s.frequentFrozen = { mikvaot: s.frequent.mikvaot || 0, rambam: s.frequent.rambam || 0 };
-          if (!s.metivta) s.metivta = { attendance: 0, behavior: 0 };
-          if (!s.metivtaFrozen) s.metivtaFrozen = { attendance: s.metivta.attendance || 0, behavior: s.metivta.behavior || 0 };
-          if (typeof s.c5Total !== 'number') s.c5Total = 0;
-          if (typeof s.minusTotal !== 'number') s.minusTotal = 0;
-        });
-        if (!Array.isArray(parsed.metivtaExtra) || parsed.metivtaExtra.length !== 23){
-          const existing = Array.isArray(parsed.metivtaExtra) ? parsed.metivtaExtra : [];
-          const byId = {};
-          existing.forEach(s => { byId[s.id] = s; });
-          const metivtaExtra = [];
-          for (let i = 1; i <= 23; i++){
-            metivtaExtra.push(byId[i] || { id: i, metivta: { attendance: 0, behavior: 0 }, metivtaFrozen: { attendance: 0, behavior: 0 } });
-          }
-          parsed.metivtaExtra = metivtaExtra;
-        }
-        if (!Array.isArray(parsed.archive)) parsed.archive = [];
-        {
-          const dailyEntries = parsed.archive.filter(e => e.type !== 'weekly');
-          const weeklyEntries = parsed.archive.filter(e => e.type === 'weekly');
-          const MAX_DAILY = 90;
-          const MAX_WEEKLY = 26;
-          if (dailyEntries.length > MAX_DAILY || weeklyEntries.length > MAX_WEEKLY){
-            const keptDaily = dailyEntries.slice(0, MAX_DAILY);
-            const keptWeekly = weeklyEntries.slice(0, MAX_WEEKLY);
-            parsed.archive = parsed.archive.filter(e => keptDaily.includes(e) || keptWeekly.includes(e));
-          }
-        }
-        if (!parsed.testWeekCleanupDone){
-          const cleanupPrevWeekStart = getWeekStart(new Date());
-          cleanupPrevWeekStart.setDate(cleanupPrevWeekStart.getDate() - 7);
-          const cleanupPrevWeekKey = getWeekKey(cleanupPrevWeekStart);
-          parsed.archive = parsed.archive.filter(e => !(e.type === 'weekly' && e.weekKey === cleanupPrevWeekKey));
-          parsed.testWeekCleanupDone = true;
-        }
-        if (!parsed.fixTzaali20260908){
-          const tzaali = parsed.students.find(s => s.id === 1);
-          if (tzaali){
-            let plusReduceLeft = 32;
-            const c5TotalReduce = Math.min(plusReduceLeft, tzaali.c5Total || 0);
-            tzaali.c5Total = (tzaali.c5Total || 0) - c5TotalReduce;
-            plusReduceLeft -= c5TotalReduce;
-            if (plusReduceLeft > 0 && tzaali.cats){
-              const c5Reduce = Math.min(plusReduceLeft, tzaali.cats.c5 || 0);
-              tzaali.cats.c5 = (tzaali.cats.c5 || 0) - c5Reduce;
-            }
-            tzaali.minusTotal = Math.min(0, (tzaali.minusTotal || 0) + 28);
-          }
-          parsed.fixTzaali20260908 = true;
-        }
-        if (typeof parsed.lastActivityDate === 'undefined') parsed.lastActivityDate = null;
-        if (typeof parsed.lastAutoResetDate === 'undefined') parsed.lastAutoResetDate = null;
-        if (!parsed.metivtaNames || typeof parsed.metivtaNames !== 'object') parsed.metivtaNames = {};
-        state = parsed;
-        return;
+  const result = await storageGet();
+  if (result && result.value){
+    const parsed = JSON.parse(result.value);
+    if (parsed && Array.isArray(parsed.students) && parsed.students.length === TOTAL_STUDENTS){
+      if (!Array.isArray(parsed.mergedActive) || parsed.mergedActive.length !== MERGE_GROUPS.length){
+        parsed.mergedActive = MERGE_GROUPS.map(g => g[0]);
       }
+      if (parsed.minusShopActive !== 'minus' && parsed.minusShopActive !== 'shop'){
+        parsed.minusShopActive = 'minus';
+      }
+      parsed.students.forEach(s => {
+        if (typeof s.purchases !== 'number') s.purchases = 0;
+        if (!s.cats) s.cats = {};
+        if (typeof s.cats.c5 !== 'number') s.cats.c5 = 0;
+        if (typeof s.cats.c6 !== 'number') s.cats.c6 = 0;
+        if (typeof s.cats.c7 !== 'number') s.cats.c7 = 0;
+        if (typeof s.cats.c8 !== 'number') s.cats.c8 = 0;
+        if (!s.frequent) s.frequent = { mikvaot: 0, rambam: 0 };
+        if (!s.frequentFrozen) s.frequentFrozen = { mikvaot: s.frequent.mikvaot || 0, rambam: s.frequent.rambam || 0 };
+        if (!s.metivta) s.metivta = { attendance: 0, behavior: 0 };
+        if (!s.metivtaFrozen) s.metivtaFrozen = { attendance: s.metivta.attendance || 0, behavior: s.metivta.behavior || 0 };
+        if (typeof s.c5Total !== 'number') s.c5Total = 0;
+        if (typeof s.minusTotal !== 'number') s.minusTotal = 0;
+      });
+      if (!Array.isArray(parsed.metivtaExtra) || parsed.metivtaExtra.length !== 23){
+        const existing = Array.isArray(parsed.metivtaExtra) ? parsed.metivtaExtra : [];
+        const byId = {};
+        existing.forEach(s => { byId[s.id] = s; });
+        const metivtaExtra = [];
+        for (let i = 1; i <= 23; i++){
+          metivtaExtra.push(byId[i] || { id: i, metivta: { attendance: 0, behavior: 0 }, metivtaFrozen: { attendance: 0, behavior: 0 } });
+        }
+        parsed.metivtaExtra = metivtaExtra;
+      }
+      if (!Array.isArray(parsed.archive)) parsed.archive = [];
+      {
+        const dailyEntries = parsed.archive.filter(e => e.type !== 'weekly');
+        const weeklyEntries = parsed.archive.filter(e => e.type === 'weekly');
+        const MAX_DAILY = 90;
+        const MAX_WEEKLY = 26;
+        if (dailyEntries.length > MAX_DAILY || weeklyEntries.length > MAX_WEEKLY){
+          const keptDaily = dailyEntries.slice(0, MAX_DAILY);
+          const keptWeekly = weeklyEntries.slice(0, MAX_WEEKLY);
+          parsed.archive = parsed.archive.filter(e => keptDaily.includes(e) || keptWeekly.includes(e));
+        }
+      }
+      if (!parsed.testWeekCleanupDone){
+        const cleanupPrevWeekStart = getWeekStart(new Date());
+        cleanupPrevWeekStart.setDate(cleanupPrevWeekStart.getDate() - 7);
+        const cleanupPrevWeekKey = getWeekKey(cleanupPrevWeekStart);
+        parsed.archive = parsed.archive.filter(e => !(e.type === 'weekly' && e.weekKey === cleanupPrevWeekKey));
+        parsed.testWeekCleanupDone = true;
+      }
+      if (!parsed.fixTzaali20260908){
+        const tzaali = parsed.students.find(s => s.id === 1);
+        if (tzaali){
+          let plusReduceLeft = 32;
+          const c5TotalReduce = Math.min(plusReduceLeft, tzaali.c5Total || 0);
+          tzaali.c5Total = (tzaali.c5Total || 0) - c5TotalReduce;
+          plusReduceLeft -= c5TotalReduce;
+          if (plusReduceLeft > 0 && tzaali.cats){
+            const c5Reduce = Math.min(plusReduceLeft, tzaali.cats.c5 || 0);
+            tzaali.cats.c5 = (tzaali.cats.c5 || 0) - c5Reduce;
+          }
+          tzaali.minusTotal = Math.min(0, (tzaali.minusTotal || 0) + 28);
+        }
+        parsed.fixTzaali20260908 = true;
+      }
+      if (typeof parsed.lastActivityDate === 'undefined') parsed.lastActivityDate = null;
+      if (typeof parsed.lastAutoResetDate === 'undefined') parsed.lastAutoResetDate = null;
+      if (!parsed.metivtaNames || typeof parsed.metivtaNames !== 'object') parsed.metivtaNames = {};
+      state = parsed;
+      return;
     }
-  } catch(e){
-    // key not found or storage error - fall through to default
+    // The document exists but its shape is unexpected - treat this as an
+    // error (see storageGet's comment) rather than silently starting blank.
+    throw new Error('הנתונים שנטענו מהשרת אינם בפורמט תקין');
   }
+  // storageGet() returned null only because the document genuinely doesn't
+  // exist yet - the one legitimate case for starting from a blank board.
   state = defaultState();
 }
 

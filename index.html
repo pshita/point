@@ -951,7 +951,7 @@ function subscribeToRemoteStateChanges(){
     let parsed;
     try{ parsed = JSON.parse(json); } catch(e){ return; }
     if (!parsed || !Array.isArray(parsed.students) || parsed.students.length !== TOTAL_STUDENTS) return;
-    parsed.archive = state.archive;
+    parsed.archive = Array.isArray(state && state.archive) ? state.archive : [];
     state = parsed;
     render();
     refreshArchiveAndRender();
@@ -1483,10 +1483,11 @@ async function doResetGuarded(){
     // transaction failed (offline, etc.) - render whatever is in memory so the UI isn't stuck
   }
   if (outcome){
-    state = JSON.parse(JSON.stringify(outcome.mainData));
     const days = outcome.dailyDays !== null ? outcome.dailyDays : await fetchArchiveDays();
     const weeks = await fetchArchiveWeeks();
-    state.archive = [...days, ...weeks];
+    const newState = JSON.parse(JSON.stringify(outcome.mainData));
+    newState.archive = [...days, ...weeks];
+    state = newState;
     lastSyncedMainJson = JSON.stringify(outcome.mainData);
   }
   render();
@@ -2493,11 +2494,12 @@ function buildLiveTodayDailyEntry(){
 
 function getDisplayArchive(){
   const weekKey = getWeekKey(new Date());
-  const historical = state.archive
+  const archive = Array.isArray(state.archive) ? state.archive : [];
+  const historical = archive
     .filter(e => e.type !== 'weekly' || e.weekKey !== weekKey)
     .slice()
     .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const currentWeekly = state.archive.find(e => e.type === 'weekly' && e.weekKey === weekKey);
+  const currentWeekly = archive.find(e => e.type === 'weekly' && e.weekKey === weekKey);
   const weeklyList = currentWeekly ? [currentWeekly] : [];
   return [buildLiveTodayDailyEntry(), ...weeklyList, ...historical];
 }
